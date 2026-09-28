@@ -14,7 +14,7 @@
 - [x] 3.2 Test (`LetterboxdSyncRunnerTests`): excluded film is not posted and records no failure; second account without the exclusion still posts it
 - [x] 3.3 `Serializd/SerializdSyncRunner.SyncOneAsync`: drop excluded episodes per account, caching the result per series within a run, count and log skips
 - [x] 3.4 Test (Serializd runner tests): excluded episode is not logged; per-series cache means one library lookup per series
-- [ ] 3.5 Bench a large synthetic episode set with and without an exclusion; record the numbers in the PR
+- [ ] 3.5 Bench a large synthetic episode set with and without an exclusion; record the numbers in the PR. Blocked: the bench harness covers parsing hot paths only and cannot exercise a real `GetCollectionFolders`; needs a live-server measurement
 
 ## 4. Real-time path
 
@@ -36,8 +36,8 @@
 
 ## 7. Docs and release
 
-- [ ] 7.1 README: document excluded libraries and that exclusion applies to future syncs only
-- [ ] 7.2 CLAUDE.md: add the Serializd scheduled sync to "Sync entry points", the `Libraries` endpoint to "Plugin surface", and one line that library exclusion is a pre-filter above `ILetterboxdService`
-- [ ] 7.3 Implementation review gates: security, ai-smells, performance (sync-loop change)
-- [ ] 7.4 Bump `AssemblyVersion` / `FileVersion` minor in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj`
-- [ ] 7.5 Add the `site/src/data/release-notes.ts` entry and write the PR `## Release notes` paragraph; reference #124
+- [x] 7.1 README: document excluded libraries and that exclusion applies to future syncs only
+- [x] 7.2 CLAUDE.md: add the Serializd scheduled sync to "Sync entry points", the `Libraries` endpoint to "Plugin surface", and one line that library exclusion is a pre-filter above `ILetterboxdService`
+- [ ] 7.3 Implementation review gates: security, ai-smells, performance (sync-loop change). Security and performance ran and findings are triaged; ai-smells could not run (both non-Claude review backends failed)
+- [x] 7.4 Bump `AssemblyVersion` / `FileVersion` minor in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj`
+- [x] 7.5 Add the `site/src/data/release-notes.ts` entry and write the PR `## Release notes` paragraph; reference #124
