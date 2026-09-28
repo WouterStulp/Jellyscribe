@@ -67,6 +67,7 @@ public class SerializdController : JellyfinUserApiController
         public bool BackfillAvailableRequests { get; set; }
         public bool MirrorJellyseerrWatchlist { get; set; }
         public string? WatchlistName { get; set; }
+        public System.Collections.Generic.List<string>? ExcludedLibraryIds { get; set; }
     }
 
     public class AccountsUpdateRequest
@@ -104,6 +105,7 @@ public class SerializdController : JellyfinUserApiController
                 backfillAvailableRequests = a.BackfillAvailableRequests,
                 mirrorJellyseerrWatchlist = a.MirrorJellyseerrWatchlist,
                 watchlistName = a.WatchlistName,
+                excludedLibraryIds = a.ExcludedLibraryIds,
             })
             .ToList();
 
@@ -152,6 +154,7 @@ public class SerializdController : JellyfinUserApiController
             BackfillAvailableRequests = req.BackfillAvailableRequests,
             MirrorJellyseerrWatchlist = req.MirrorJellyseerrWatchlist,
             WatchlistName = string.IsNullOrWhiteSpace(req.WatchlistName) ? null : req.WatchlistName.Trim(),
+            ExcludedLibraryIds = LibraryExclusion.Normalise(req.ExcludedLibraryIds),
         }).ToList();
 
         config.SerializdAccounts.Clear();

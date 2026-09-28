@@ -34,6 +34,27 @@ public static class LibraryExclusion
     }
 
     /// <summary>
+    /// Canonical stored form for ids arriving from the settings pages: valid, non-empty Guids in
+    /// "N" format, deduplicated, in submission order. Null (a client that did not send the field)
+    /// yields an empty list, the "exclude nothing" default.
+    /// </summary>
+    public static List<string> Normalise(IEnumerable<string>? ids)
+    {
+        var result = new List<string>();
+        if (ids == null)
+            return result;
+
+        var seen = new HashSet<Guid>();
+        foreach (var id in ids)
+        {
+            if (Guid.TryParse(id, out var guid) && guid != Guid.Empty && seen.Add(guid))
+                result.Add(guid.ToString("N"));
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Parses stored ids into Guids, accepting both "N" (stored) and dashed forms and ignoring
     /// anything malformed, so a hand-edited config cannot break sync.
     /// </summary>

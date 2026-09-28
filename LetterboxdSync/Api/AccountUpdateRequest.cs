@@ -37,6 +37,12 @@ public class AccountUpdateRequest
     public bool IsPrimary { get; set; }
 
     public string? PlaylistName { get; set; }
+
+    /// <summary>
+    /// Library ids this account never exports. Null means the client did not send the field:
+    /// PutAccount then keeps the stored list, PutAccounts stores an empty one.
+    /// </summary>
+    public List<string>? ExcludedLibraryIds { get; set; }
 }
 
 /// <summary>
