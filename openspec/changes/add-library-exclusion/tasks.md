@@ -10,28 +10,28 @@
 
 ## 3. Scheduled sync paths
 
-- [ ] 3.1 `LetterboxdSyncRunner.SyncOneUserAsync`: drop excluded films per account next to the date filter, count and log skips at Information
-- [ ] 3.2 Test (`LetterboxdSyncRunnerTests`): excluded film is not posted and records no failure; second account without the exclusion still posts it
-- [ ] 3.3 `Serializd/SerializdSyncRunner.SyncOneAsync`: drop excluded episodes per account, caching the result per series within a run, count and log skips
-- [ ] 3.4 Test (Serializd runner tests): excluded episode is not logged; per-series cache means one library lookup per series
+- [x] 3.1 `LetterboxdSyncRunner.SyncOneUserAsync`: drop excluded films per account next to the date filter, count and log skips at Information
+- [x] 3.2 Test (`LetterboxdSyncRunnerTests`): excluded film is not posted and records no failure; second account without the exclusion still posts it
+- [x] 3.3 `Serializd/SerializdSyncRunner.SyncOneAsync`: drop excluded episodes per account, caching the result per series within a run, count and log skips
+- [x] 3.4 Test (Serializd runner tests): excluded episode is not logged; per-series cache means one library lookup per series
 - [ ] 3.5 Bench a large synthetic episode set with and without an exclusion; record the numbers in the PR
 
 ## 4. Real-time path
 
-- [ ] 4.1 `PlaybackHandler`: skip an account whose exclusions match the finished film or episode, before auth or any network call, with one Information log line
-- [ ] 4.2 Test (`PlaybackHandlerTests`): excluded film makes no Letterboxd call for that account; excluded episode makes no Serializd call; non-excluding account on the same user still syncs (films and episodes)
+- [x] 4.1 `PlaybackHandler`: skip an account whose exclusions match the finished film or episode, before auth or any network call, with one Information log line
+- [x] 4.2 Test (`PlaybackHandlerTests`): excluded film makes no Letterboxd call for that account; excluded episode makes no Serializd call; non-excluding account on the same user still syncs (films and episodes)
 
 ## 5. API
 
-- [ ] 5.1 Add `Api/LibrariesController.cs` serving `GET Jellyfin.Plugin.LetterboxdSync/Libraries`: film/TV/mixed/unset virtual folders with id (N format), name, collection type; non-admins see only libraries they can access
-- [ ] 5.2 Carry `excludedLibraryIds` through the Letterboxd `Account`/`Accounts` GET and PUT payloads (`AccountUpdateRequest`) and the Serializd `Accounts` GET and PUT
-- [ ] 5.3 Test (new `LibrariesControllerTests`, `LetterboxdControllerTests`, Serializd controller tests): listing filters collection types and user access; PUT persists the list; GET echoes it
+- [x] 5.1 Add `Api/LibrariesController.cs` serving `GET Jellyfin.Plugin.LetterboxdSync/Libraries`: film/TV/mixed/unset virtual folders with id (N format), name, collection type; non-admins see only libraries they can access
+- [x] 5.2 Carry `excludedLibraryIds` through the Letterboxd `Account`/`Accounts` GET and PUT payloads (`AccountUpdateRequest`) and the Serializd `Accounts` GET and PUT
+- [x] 5.3 Test (new `LibrariesControllerTests`, `LetterboxdControllerTests`, Serializd controller tests): listing filters collection types and user access; PUT persists the list; GET echoes it
 
 ## 6. UI
 
-- [ ] 6.1 `Web/configPage.html`: "Excluded libraries" checklist on each Letterboxd and Serializd account card, saved via the full-config round trip, stale ids dropped on save, hidden when no libraries are listed
-- [ ] 6.2 `Web/userPage.html`: same checklist, saved via the account PUT endpoints
-- [ ] 6.3 Update visual baselines and check both pages in light and dark themes
+- [x] 6.1 `Web/configPage.html`: "Excluded libraries" checklist on each Letterboxd and Serializd account card, saved via the full-config round trip, stale ids dropped on save, hidden when no libraries are listed
+- [x] 6.2 `Web/userPage.html`: same checklist, saved via the account PUT endpoints
+- [x] 6.3 Update visual baselines and check both pages in light and dark themes
 - [ ] 6.4 Manual check on the dev server: exclude a library, play an item from it, confirm no post and the skip log line
 
 ## 7. Docs and release

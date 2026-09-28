@@ -173,23 +173,26 @@ public class SerializdSyncRunner
         var seriesById = new Dictionary<int, Series>();
         var skippedNoPlayDate = 0;
         var skippedExcluded = 0;
-        // Episodes of one series live in one library, so the library lookup is cached per
-        // series: a long-running show costs one lookup per run, not one per episode.
+        // A Series item is one folder on disk, so all of its episodes resolve to the same libraries
+        // (seasons filed under different libraries become separate Series items with their own
+        // ids). The lookup is therefore cached per series: one lookup per show per run.
         var excludedBySeries = new Dictionary<Guid, bool>();
         foreach (var item in episodes)
         {
             if (item is not Episode ep) continue;
-            var epRef = SerializdEpisodeMapper.Build(
-                SeriesTmdbIdReader(ep), ep.ParentIndexNumber, ep.IndexNumber, ep.IndexNumberEnd);
-            if (epRef == null) continue;
 
-            // Drop episodes in libraries this account excludes (issue #124). Logged, not
-            // recorded in sync history: an excluded library is a choice, not a failure.
+            // Drop episodes in libraries this account excludes (issue #124), before any per-episode
+            // mapping work. Logged, not recorded in sync history: an excluded library is a choice,
+            // not a failure.
             if (account.ExcludedLibraryIds.Count > 0 && IsExcludedCached(ep))
             {
                 skippedExcluded++;
                 continue;
             }
+
+            var epRef = SerializdEpisodeMapper.Build(
+                SeriesTmdbIdReader(ep), ep.ParentIndexNumber, ep.IndexNumber, ep.IndexNumberEnd);
+            if (epRef == null) continue;
 
             var ud = _userDataManager.GetUserData(user, ep);
 
@@ -238,10 +241,10 @@ public class SerializdSyncRunner
         bool IsExcludedCached(Episode ep)
         {
             if (ep.SeriesId == Guid.Empty)
-                return LibraryExclusion.IsExcluded(_libraryManager, ep, account.ExcludedLibraryIds);
+                return LibraryExclusion.IsExcluded(_libraryManager, ep, account.ExcludedLibraryIds, _logger);
             if (!excludedBySeries.TryGetValue(ep.SeriesId, out var excluded))
             {
-                excluded = LibraryExclusion.IsExcluded(_libraryManager, ep, account.ExcludedLibraryIds);
+                excluded = LibraryExclusion.IsExcluded(_libraryManager, ep, account.ExcludedLibraryIds, _logger);
                 excludedBySeries[ep.SeriesId] = excluded;
             }
 

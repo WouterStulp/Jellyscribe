@@ -108,7 +108,7 @@ public class PlaybackHandler : IHostedService, IDisposable
 
             foreach (var account in accounts)
             {
-                if (LibraryExclusion.IsExcluded(_libraryManager, e.Item, account.ExcludedLibraryIds))
+                if (LibraryExclusion.IsExcluded(_libraryManager, e.Item, account.ExcludedLibraryIds, _logger))
                 {
                     _logger.LogInformation(
                         "Skipping real-time sync of {Title} for {LbUser}: in a library this account excludes",
@@ -265,7 +265,7 @@ public class PlaybackHandler : IHostedService, IDisposable
 
             foreach (var account in accounts)
             {
-                if (LibraryExclusion.IsExcluded(_libraryManager, episode, account.ExcludedLibraryIds))
+                if (LibraryExclusion.IsExcluded(_libraryManager, episode, account.ExcludedLibraryIds, _logger))
                 {
                     _logger.LogInformation(
                         "Skipping real-time Serializd sync of {Series} S{Season}E{Episode} for {Email}: in a library this account excludes",

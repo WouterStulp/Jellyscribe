@@ -136,6 +136,7 @@ public class SerializdController : JellyfinUserApiController
 
         var config = Plugin.Instance!.Configuration;
         var preserved = config.SerializdAccounts.Where(a => a.UserJellyfinId != userId).ToList();
+        var previous = config.SerializdAccounts.Where(a => a.UserJellyfinId == userId).ToList();
         var mine = request.Accounts.Select(req => new Configuration.SerializdAccount
         {
             UserJellyfinId = userId,
@@ -154,7 +155,9 @@ public class SerializdController : JellyfinUserApiController
             BackfillAvailableRequests = req.BackfillAvailableRequests,
             MirrorJellyseerrWatchlist = req.MirrorJellyseerrWatchlist,
             WatchlistName = string.IsNullOrWhiteSpace(req.WatchlistName) ? null : req.WatchlistName.Trim(),
-            ExcludedLibraryIds = LibraryExclusion.Normalise(req.ExcludedLibraryIds),
+            // A client that omits the field keeps the account's stored exclusions.
+            ExcludedLibraryIds = LibraryExclusion.ResolveForSave(req.ExcludedLibraryIds,
+                previous.FirstOrDefault(p => string.Equals(p.Email, req.Email!.Trim(), StringComparison.OrdinalIgnoreCase))?.ExcludedLibraryIds),
         }).ToList();
 
         config.SerializdAccounts.Clear();

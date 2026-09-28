@@ -626,4 +626,21 @@ public class SerializdControllerTests : IDisposable
         Assert.Equal(new[] { anime },
             (IEnumerable<string>)echoed.GetType().GetProperty("excludedLibraryIds")!.GetValue(echoed)!);
     }
+
+    [Fact]
+    public void PutAccounts_OmittedExcludedLibraryIds_KeepsStoredList()
+    {
+        var (_, idHex) = AddUserWithAccount(email: "User@Example.com");
+        const string anime = "0c5b2a1e9f3d4c7a8b6e5d4c3b2a1f0e";
+        Plugin.Instance!.Configuration.SerializdAccounts.Single(a => a.UserJellyfinId == idHex).ExcludedLibraryIds.Add(anime);
+        Authenticate(idHex);
+
+        _controller.PutAccounts(new SerializdController.AccountsUpdateRequest
+        {
+            Accounts = new() { new SerializdController.AccountItem { Email = "user@example.com", Enabled = true } }
+        });
+
+        Assert.Equal(new[] { anime },
+            Plugin.Instance!.Configuration.SerializdAccounts.Single(a => a.UserJellyfinId == idHex).ExcludedLibraryIds);
+    }
 }

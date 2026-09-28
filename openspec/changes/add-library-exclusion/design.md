@@ -41,8 +41,10 @@ no dashes), matching how the plugin already stores Jellyfin user ids.
 - Alternative: store names for readability in the XML. Rejected because a
   rename would silently re-enable sync for that library.
 - A deleted library leaves a dead id in the list. It matches nothing, so it is
-  harmless, and the UI drops it on the next save because it only writes ids
-  that are still listed.
+  harmless, and it is kept on save: the pages only replace ids for libraries they
+  listed, so a restricted user's partial list (or a failed fetch) can never clear
+  an exclusion an admin set. An API save that omits the field keeps the stored
+  list for the same reason.
 
 ### Resolve an item's libraries with `ILibraryManager.GetCollectionFolders`
 

@@ -92,4 +92,31 @@ public class LibraryExclusionTests
         Assert.False(LibraryExclusion.IsExcluded(_libraryManager, _item, new[] { "not-a-guid", "", "00000000000000000000000000000000" }));
         _libraryManager.DidNotReceive().GetCollectionFolders(Arg.Any<BaseItem>());
     }
+
+    [Fact]
+    public void LookupThrows_FailsClosed()
+    {
+        // The list decides what leaves the server: an unresolvable library holds the item back.
+        _libraryManager.GetCollectionFolders(_item).Returns(_ => throw new InvalidOperationException("mid scan"));
+
+        Assert.True(LibraryExclusion.IsExcluded(_libraryManager, _item, new[] { AnimeId.ToString("N") }));
+    }
+
+    [Fact]
+    public void ResolveForSave_OmittedField_KeepsStoredList()
+    {
+        var stored = new List<string> { AnimeId.ToString("N") };
+
+        Assert.Equal(stored, LibraryExclusion.ResolveForSave(null, stored));
+        Assert.Empty(LibraryExclusion.ResolveForSave(null, null));
+    }
+
+    [Fact]
+    public void ResolveForSave_SubmittedList_ReplacesStoredList()
+    {
+        var stored = new List<string> { AnimeId.ToString("N") };
+
+        Assert.Equal(new[] { TvId.ToString("N") }, LibraryExclusion.ResolveForSave(new[] { TvId.ToString() }, stored));
+        Assert.Empty(LibraryExclusion.ResolveForSave(new List<string>(), stored));
+    }
 }

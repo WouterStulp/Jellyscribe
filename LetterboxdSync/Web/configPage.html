@@ -782,6 +782,14 @@
                             }).join('') +
                             '<div class="ws-row" id="dateDaysRow" style="display:' + (a.EnableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.DateFilterDays || 7) + '" /></div>';
                         },
+                        // Stored ids for libraries this page listed are replaced by what is ticked; ids for
+                        // libraries it did not list are kept, so a partial or failed library list can never
+                        // silently clear an exclusion. That also keeps ids of deleted libraries, which is
+                        // harmless: they match nothing.
+                        mergeExcluded: function (stored, ticked) {
+                            var shown = (this.libraries || []).map(function (l) { return l.id; });
+                            return stored.filter(function (id) { return shown.indexOf(id) < 0; }).concat(ticked);
+                        },
                         libsFor: function (a) {
                             var self = this, excluded = (a && a.ExcludedLibraryIds) || [];
                             return (self.libraries || []).map(function (l) {
@@ -841,9 +849,7 @@
                             var self = this, m = self.collectModal();
                             if (!m.username) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Username/email is required.</span>'; return; }
                             var orig = self.editing.original;
-                            // Save exactly the ticked ids (which also drops ids of deleted libraries), but
-                            // only when the library list loaded; otherwise keep what was stored.
-                            var excludedLibs = self.libraries ? m.libs : ((orig && orig.ExcludedLibraryIds) || []);
+                            var excludedLibs = self.mergeExcluded((orig && orig.ExcludedLibraryIds) || [], m.libs);
                             if (m.svc === 'serializd') {
                                 self.config.SerializdAccounts = (self.config.SerializdAccounts || []).filter(function (x) { return x !== orig; });
                                 self.config.SerializdAccounts.push({ UserJellyfinId: m.userId, Email: m.username, Password: m.password, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, SyncWatchlist: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, WatchlistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });

@@ -350,6 +350,13 @@
                                 .then(function (d) { if (d) self.libraries = d.libraries || []; }).catch(function () { });
                         },
                         esc: function (s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+                        // Stored ids for libraries this page listed are replaced by what is ticked; ids for
+                        // libraries you cannot see (an admin may have excluded one on your behalf) are kept,
+                        // so a partial or failed library list can never silently clear an exclusion.
+                        mergeExcluded: function (stored, ticked) {
+                            var shown = (this.libraries || []).map(function (l) { return l.id; });
+                            return stored.filter(function (id) { return shown.indexOf(id) < 0; }).concat(ticked);
+                        },
                         libsFor: function (a) {
                             var self = this, excluded = (a && a.excludedLibraryIds) || [];
                             return (self.libraries || []).map(function (l) {
@@ -607,10 +614,8 @@
                             var self = this, m = self.collectModal();
                             if (!m.username) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Username/email is required.</span>'; return; }
                             document.getElementById('mStatus').textContent = 'Saving…';
-                            // Save exactly the ticked ids (which also drops ids of deleted libraries), but
-                            // only when the library list loaded; otherwise keep what was stored.
                             var orig = self.editing ? (m.svc === 'serializd' ? self.sz : self.lb)[self.editing.i] : null;
-                            var excludedLibs = self.libraries ? m.libs : ((orig && orig.excludedLibraryIds) || []);
+                            var excludedLibs = self.mergeExcluded((orig && orig.excludedLibraryIds) || [], m.libs);
                             if (m.svc === 'serializd') {
                                 var item = { email: m.username, password: m.password, enabled: m.enabled, syncFavorites: m.fav, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, syncWatchlist: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, watchlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
                                 if (self.editing) self.sz[self.editing.i] = item; else self.sz.push(item);

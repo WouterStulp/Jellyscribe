@@ -84,15 +84,22 @@ it SHALL list only the libraries that caller can access.
 ### Requirement: Excluded libraries in the settings UI
 The admin config page and the per-user settings page SHALL show, on each
 Letterboxd and Serializd account card, a checklist of libraries from the listing
-endpoint, pre-checked from the account's excluded list, and SHALL save exactly the checked
-ids with the account, so ids of libraries that are no longer listed are dropped.
+endpoint, pre-checked from the account's excluded list. On save, stored ids for listed
+libraries SHALL be replaced by the checked ones, and stored ids for libraries the page did
+not list SHALL be kept, so a partial or failed library list never clears an exclusion. An
+account save request that omits the field entirely SHALL keep the stored list.
 
 #### Scenario: User excludes a library
 - **WHEN** a user ticks "Anime" on their Serializd account card and saves
 - **THEN** the stored account's excluded list contains the Anime library id and
   the next sync skips Anime episodes for that account
 
-#### Scenario: Stale id cleaned on save
-- **WHEN** the stored list holds an id for a deleted library and the user saves
-  the account
-- **THEN** the saved list no longer contains that id
+#### Scenario: Library the caller cannot see is kept on save
+- **WHEN** an admin excluded the Anime library on a user's account, and that user,
+  who has no access to Anime, edits and saves the account from their own page
+- **THEN** the stored list still contains the Anime library id
+
+#### Scenario: Client omits the field
+- **WHEN** an account save request carries no excluded library list for an
+  existing account
+- **THEN** the account's stored list is unchanged

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
+using Microsoft.Extensions.Logging;
 
 namespace LetterboxdSync;
 
@@ -21,16 +22,27 @@ public static class LibraryExclusion
     /// are never excluded. An empty list short-circuits without touching the library manager, so
     /// accounts that exclude nothing pay nothing.
     /// </summary>
-    public static bool IsExcluded(ILibraryManager libraryManager, BaseItem item, IReadOnlyCollection<string>? excludedLibraryIds)
+    public static bool IsExcluded(ILibraryManager libraryManager, BaseItem item, IReadOnlyCollection<string>? excludedLibraryIds, ILogger? logger = null)
     {
         var excluded = ParseIds(excludedLibraryIds);
         if (excluded.Count == 0)
             return false;
 
-        // GetCollectionFolders maps the item's physical root to the user-facing library
-        // (CollectionFolder) whose id the settings pages store. item.GetTopParent() would
-        // return the physical folder instead, whose id never matches.
-        return libraryManager.GetCollectionFolders(item).Any(folder => excluded.Contains(folder.Id));
+        try
+        {
+            // GetCollectionFolders maps the item's physical root to the user-facing library
+            // (CollectionFolder) whose id the settings pages store. item.GetTopParent() would
+            // return the physical folder instead, whose id never matches.
+            return libraryManager.GetCollectionFolders(item).Any(folder => excluded.Contains(folder.Id));
+        }
+        catch (Exception ex)
+        {
+            // Fail closed: this list decides what leaves the server, so an item whose library
+            // cannot be resolved (e.g. mid library scan) is held back for this run rather than
+            // risk posting excluded content. The next scheduled run retries it.
+            logger?.LogWarning(ex, "Could not resolve the library of {Title}; holding it back from this account for now", item.Name);
+            return true;
+        }
     }
 
     /// <summary>
@@ -53,6 +65,14 @@ public static class LibraryExclusion
 
         return result;
     }
+
+    /// <summary>
+    /// What an account-save endpoint stores: the normalised submitted list, or, when the client
+    /// omitted the field entirely (null), a copy of the stored list. Omission must never clear an
+    /// exclusion, because this list decides what leaves the server.
+    /// </summary>
+    public static List<string> ResolveForSave(IEnumerable<string>? submitted, IEnumerable<string>? stored)
+        => submitted != null ? Normalise(submitted) : Normalise(stored);
 
     /// <summary>
     /// Parses stored ids into Guids, accepting both "N" (stored) and dashed forms and ignoring

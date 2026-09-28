@@ -332,8 +332,7 @@ public class LetterboxdController : JellyfinUserApiController
         account.MirrorJellyseerrWatchlist = request.MirrorJellyseerrWatchlist;
         account.SkipPreviouslySynced = request.SkipPreviouslySynced;
         account.StopOnFailure = request.StopOnFailure;
-        if (request.ExcludedLibraryIds != null)
-            account.ExcludedLibraryIds = LibraryExclusion.Normalise(request.ExcludedLibraryIds);
+        account.ExcludedLibraryIds = LibraryExclusion.ResolveForSave(request.ExcludedLibraryIds, account.ExcludedLibraryIds);
 
         // IsPrimary and PlaylistName are deliberately NOT copied from the request.
         // The userPage form does not expose them; deserialisation would set them to
@@ -430,6 +429,7 @@ public class LetterboxdController : JellyfinUserApiController
         // page is the only path that should touch other users' rows; this endpoint
         // is per-user scope.
         var preserved = Config.Accounts.Where(a => a.UserJellyfinId != userId).ToList();
+        var previous = Config.Accounts.Where(a => a.UserJellyfinId == userId).ToList();
 
         var mine = new List<Account>();
         foreach (var req in request.Accounts)
@@ -454,7 +454,9 @@ public class LetterboxdController : JellyfinUserApiController
                 StopOnFailure = req.StopOnFailure,
                 IsPrimary = req.IsPrimary,
                 PlaylistName = string.IsNullOrWhiteSpace(req.PlaylistName) ? null : req.PlaylistName.Trim(),
-                ExcludedLibraryIds = LibraryExclusion.Normalise(req.ExcludedLibraryIds)
+                // A client that omits the field keeps the account's stored exclusions.
+                ExcludedLibraryIds = LibraryExclusion.ResolveForSave(req.ExcludedLibraryIds,
+                    previous.FirstOrDefault(p => string.Equals(p.LetterboxdUsername, req.LetterboxdUsername, StringComparison.OrdinalIgnoreCase))?.ExcludedLibraryIds)
             });
         }
 

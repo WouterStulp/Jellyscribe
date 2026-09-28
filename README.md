@@ -113,7 +113,7 @@ These apply the same way whether the account is a Letterboxd (film) or Serializd
 | **Mirror into Seerr watchlist** | Two-way mirror of your watchlist into your Seerr user's own watchlist (movies for Letterboxd accounts, TV for Serializd accounts) |
 | **Import diary as played** | Marks Jellyfin movies or episodes as played if they appear in your Letterboxd or Serializd diary |
 | **Skip previously synced** | Uses the plugin's local sync history to skip titles already logged without hitting Letterboxd/Serializd; recommended, especially on large libraries |
-| **Excluded libraries** | Jellyfin libraries whose films or episodes are never sent to this account, by the scheduled sync or the real-time one. Applies to future syncs only; anything already logged stays on Letterboxd or Serializd. Diary import and watchlist sync still look at every library |
+| **Excluded libraries** | Jellyfin libraries whose films or episodes are never logged to this account's diary, by the scheduled sync or the real-time one. Applies to future syncs only; anything already logged stays on Letterboxd or Serializd. It governs diary logging only: diary import, watchlist sync, and Seerr requests still look at every library |
 | **Stop on failure** | Halts the run at the first failure to avoid inflaming rate limits; the rest are picked up next run |
 | **Raw Cookies** | For Cloudflare bypass, Letterboxd accounts only, see below |
 

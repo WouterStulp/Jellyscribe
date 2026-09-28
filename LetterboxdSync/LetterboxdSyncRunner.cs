@@ -200,7 +200,7 @@ public class LetterboxdSyncRunner
             var skippedExcluded = 0;
             movies = movies.Where(m =>
             {
-                if (!LibraryExclusion.IsExcluded(_libraryManager, m, account.ExcludedLibraryIds)) return true;
+                if (!LibraryExclusion.IsExcluded(_libraryManager, m, account.ExcludedLibraryIds, _logger)) return true;
                 skippedExcluded++;
                 return false;
             }).ToList();

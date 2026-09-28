@@ -1194,4 +1194,26 @@ public class LetterboxdControllerTests
         Assert.Equal(new[] { "0c5b2a1e9f3d4c7a8b6e5d4c3b2a1f0e" },
             h.Config.Accounts.Single(a => a.UserJellyfinId == UserId).ExcludedLibraryIds);
     }
+
+    [Fact]
+    public void PutAccounts_OmittedExcludedLibraryIds_KeepsStoredListPerAccount()
+    {
+        // A client that predates the field must not clear what an account keeps off Letterboxd.
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        const string anime = "0c5b2a1e9f3d4c7a8b6e5d4c3b2a1f0e";
+        h.AddAccount(UserId, "Mine").ExcludedLibraryIds.Add(anime);
+
+        h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new()
+            {
+                new AccountUpdateRequest { LetterboxdUsername = "mine", ExcludedLibraryIds = null },
+                new AccountUpdateRequest { LetterboxdUsername = "brand-new", ExcludedLibraryIds = null }
+            }
+        });
+
+        var mine = h.Config.Accounts.Where(a => a.UserJellyfinId == UserId).ToList();
+        Assert.Equal(new[] { anime }, mine.Single(a => a.LetterboxdUsername == "mine").ExcludedLibraryIds);
+        Assert.Empty(mine.Single(a => a.LetterboxdUsername == "brand-new").ExcludedLibraryIds);
+    }
 }
