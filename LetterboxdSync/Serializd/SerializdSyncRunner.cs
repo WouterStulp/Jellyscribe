@@ -172,12 +172,24 @@ public class SerializdSyncRunner
         var records = new List<EpisodePlay>();
         var seriesById = new Dictionary<int, Series>();
         var skippedNoPlayDate = 0;
+        var skippedExcluded = 0;
+        // Episodes of one series live in one library, so the library lookup is cached per
+        // series: a long-running show costs one lookup per run, not one per episode.
+        var excludedBySeries = new Dictionary<Guid, bool>();
         foreach (var item in episodes)
         {
             if (item is not Episode ep) continue;
             var epRef = SerializdEpisodeMapper.Build(
                 SeriesTmdbIdReader(ep), ep.ParentIndexNumber, ep.IndexNumber, ep.IndexNumberEnd);
             if (epRef == null) continue;
+
+            // Drop episodes in libraries this account excludes (issue #124). Logged, not
+            // recorded in sync history: an excluded library is a choice, not a failure.
+            if (account.ExcludedLibraryIds.Count > 0 && IsExcludedCached(ep))
+            {
+                skippedExcluded++;
+                continue;
+            }
 
             var ud = _userDataManager.GetUserData(user, ep);
 
@@ -206,6 +218,11 @@ public class SerializdSyncRunner
                 seriesById[epRef.ShowTmdbId] = series;
         }
 
+        if (skippedExcluded > 0)
+            _logger.LogInformation(
+                "Serializd catch-up: skipping {Count} episodes for {Username} as {Email}: in a library this account excludes",
+                skippedExcluded, user.Username, account.Email);
+
         if (skippedNoPlayDate > 0)
             _logger.LogInformation(
                 "Serializd catch-up: skipping {Count} episodes for {Username}: marked played but no plausible LastPlayedDate (no real watch date to log)",
@@ -216,6 +233,19 @@ public class SerializdSyncRunner
         {
             var cutoff = DateTime.UtcNow.AddDays(-Math.Max(1, account.DateFilterDays));
             records = records.Where(r => r.WatchedAtUtc >= cutoff).ToList();
+        }
+
+        bool IsExcludedCached(Episode ep)
+        {
+            if (ep.SeriesId == Guid.Empty)
+                return LibraryExclusion.IsExcluded(_libraryManager, ep, account.ExcludedLibraryIds);
+            if (!excludedBySeries.TryGetValue(ep.SeriesId, out var excluded))
+            {
+                excluded = LibraryExclusion.IsExcluded(_libraryManager, ep, account.ExcludedLibraryIds);
+                excludedBySeries[ep.SeriesId] = excluded;
+            }
+
+            return excluded;
         }
 
         // "Skip previously synced" (default on) short-circuits via the local dedup history.
