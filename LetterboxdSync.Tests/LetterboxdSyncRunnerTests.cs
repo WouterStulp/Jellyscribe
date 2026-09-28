@@ -152,6 +152,43 @@ public class LetterboxdSyncRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task TryRunForUserAsync_EveryFilmExcluded_CompletesWithoutAuthOrHistory()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        Plugin.Instance!.Configuration.Accounts.Add(new Account
+        {
+            UserJellyfinId = userId,
+            LetterboxdUsername = "lb-excludes",
+            LetterboxdPassword = "secret",
+            Enabled = true,
+            SkipPreviouslySynced = false,
+            ExcludedLibraryIds = { AnimeLibraryId.ToString("N") }
+        });
+        var movie = MakeMovie(1233413, "Perfect Blue");
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _libraryManager.GetCollectionFolders(movie)
+            .Returns(new List<Folder> { new CollectionFolder { Id = AnimeLibraryId } });
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow });
+        var factoryHit = false;
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(Substitute.For<ILetterboxdService>());
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "test", new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        Assert.False(factoryHit);
+        Assert.Empty(SyncHistory.GetRecent(100, "lachlan"));
+        // The progress track is closed, so the dashboard does not spin forever.
+        var snapshot = SyncProgress.GetSnapshot();
+        Assert.False((bool)snapshot.GetType().GetProperty("isRunning")!.GetValue(snapshot)!);
+    }
+
+    [Fact]
     public async Task TryRunForUserAsync_FilmInOtherLibrary_StillSyncsForExcludingAccount()
     {
         var (user, userId) = MakeUser("lachlan");
