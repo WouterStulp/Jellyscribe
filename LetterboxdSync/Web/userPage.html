@@ -353,7 +353,7 @@
                         libsFor: function (a) {
                             var self = this, excluded = (a && a.excludedLibraryIds) || [];
                             return (self.libraries || []).map(function (l) {
-                                return '<label><input type="checkbox" class="mLibChk" data-id="' + self.esc(l.id) + '"' + (excluded.indexOf(l.id) >= 0 ? ' checked' : '') + ' /><span>' + self.esc(l.name) + '<span class="desc">' + self.esc(l.collectionType) + '</span></span></label>';
+                                return '<label><input type="checkbox" class="mLibChk" data-id="' + self.esc(l.id) + '"' + (excluded.indexOf(l.id) >= 0 ? ' checked' : '') + ' /><span>' + self.esc(l.name) + '<span class="desc">' + ({ movies: 'Films', tvshows: 'TV', mixed: 'Mixed' }[l.collectionType] || 'Mixed') + '</span></span></label>';
                             }).join('');
                         },
                         wire: function () {

@@ -785,7 +785,7 @@
                         libsFor: function (a) {
                             var self = this, excluded = (a && a.ExcludedLibraryIds) || [];
                             return (self.libraries || []).map(function (l) {
-                                return '<label><input type="checkbox" class="mLibChk" data-id="' + self.escAttr(l.id) + '"' + (excluded.indexOf(l.id) >= 0 ? ' checked' : '') + ' /><span>' + self.escAttr(l.name) + '<span class="desc">' + self.escAttr(l.collectionType) + '</span></span></label>';
+                                return '<label><input type="checkbox" class="mLibChk" data-id="' + self.escAttr(l.id) + '"' + (excluded.indexOf(l.id) >= 0 ? ' checked' : '') + ' /><span>' + self.escAttr(l.name) + '<span class="desc">' + ({ movies: 'Films', tvshows: 'TV', mixed: 'Mixed' }[l.collectionType] || 'Mixed') + '</span></span></label>';
                             }).join('');
                         },
                         onSvcChange: function () {
