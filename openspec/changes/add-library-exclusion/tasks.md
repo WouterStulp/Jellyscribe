@@ -1,12 +1,12 @@
 ## 1. Config model
 
-- [ ] 1.1 Add `ExcludedLibraryIds` (`List<string>`, default empty) to `Configuration/Account.cs` and `Configuration/SerializdAccount.cs`
-- [ ] 1.2 Test: an XML config without the element deserializes to an empty list, and a populated list round-trips (`AccountTests`, Serializd account tests)
+- [x] 1.1 Add `ExcludedLibraryIds` (`List<string>`, default empty) to `Configuration/Account.cs` and `Configuration/SerializdAccount.cs`
+- [x] 1.2 Test: an XML config without the element deserializes to an empty list, and a populated list round-trips (`AccountTests`, Serializd account tests)
 
 ## 2. Shared membership rule
 
-- [ ] 2.1 Add `LibraryExclusion.IsExcluded(ILibraryManager, BaseItem, IReadOnlyCollection<string>)`: false on empty list, true when any `GetCollectionFolders(item)` id (N format, case-insensitive) is listed
-- [ ] 2.2 Test: empty list never calls the library manager; single library excluded; two libraries with one excluded; unknown id; item with no collection folders
+- [x] 2.1 Add `LibraryExclusion.IsExcluded(ILibraryManager, BaseItem, IReadOnlyCollection<string>)`: false on empty list, true when any `GetCollectionFolders(item)` id (N format, case-insensitive) is listed
+- [x] 2.2 Test: empty list never calls the library manager; single library excluded; two libraries with one excluded; unknown id; item with no collection folders
 
 ## 3. Scheduled sync paths
 

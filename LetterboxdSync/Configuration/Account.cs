@@ -90,4 +90,11 @@ public class Account
     /// "Letterboxd Watchlist ({LetterboxdUsername})" so each account gets its own playlist.
     /// </summary>
     public string? PlaylistName { get; set; }
+
+    /// <summary>
+    /// Jellyfin library ids (CollectionFolder ids, "N" format) whose items this account never
+    /// exports, on the scheduled and real-time paths alike. Empty means every library syncs, which
+    /// is also what configs saved before this setting existed deserialize to. Import paths ignore it.
+    /// </summary>
+    public List<string> ExcludedLibraryIds { get; set; } = new List<string>();
 }
