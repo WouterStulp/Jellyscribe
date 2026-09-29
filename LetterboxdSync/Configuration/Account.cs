@@ -18,7 +18,7 @@ public class Account
     /// XML-serialized, encrypted form of <see cref="LetterboxdPassword"/> (see
     /// <see cref="SecretProtector"/>). Exists only so the on-disk config file never holds
     /// the password in plaintext; JsonIgnore keeps it out of the admin config page's
-    /// GET/PUT JSON round-trip (configPage.js echoes that payload back verbatim on save,
+    /// GET/PUT JSON round-trip (configPage.html echoes that payload back verbatim on save,
     /// which would otherwise clobber a freshly-typed password with stale ciphertext).
     /// Nothing outside this class and tests should read or write it directly, use
     /// <see cref="LetterboxdPassword"/>.

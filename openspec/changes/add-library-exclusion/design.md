@@ -11,7 +11,7 @@ Export to Letterboxd and Serializd happens in three places:
 
 None of these know which library an item lives in. Account settings are plain
 properties on `Account` / `SerializdAccount`, persisted by Jellyfin's XML plugin
-config, edited on the admin page (full-config GET/PUT through `configPage.js`)
+config, edited on the admin page (full-config GET/PUT through the inline script in `configPage.html`)
 and on the per-user page (the `Accounts` GET/PUT endpoints on
 `LetterboxdController` and `SerializdController`).
 
@@ -135,8 +135,10 @@ section is hidden when the endpoint returns no libraries.
   would never match] → They are treated as not excluded, which is today's
   behavior; they are rare and still need a matching TMDb id to post anything.
 - [Admin page full-config round trip could drop the new list if the JS rebuilds
-  account objects field by field] → Verify `configPage.js` preserves unknown
-  fields, and cover it with a manual check on the dev server.
+  account objects field by field] → It does: `configPage.html`'s `saveAccount`
+  rebuilds each account literal, so `ExcludedLibraryIds` is written explicitly
+  there. The legacy `configPage.js`, which also rebuilt accounts field by field,
+  was dead (no page loaded it since March 2026) and is removed in this change.
 - [Another in-flight change (`feat/stream-ratings`) adds a new path that pushes
   ratings to Letterboxd and new account fields on the same pages and DTOs] →
   Whichever lands second rebases and re-runs the plan gate; the ratings path must

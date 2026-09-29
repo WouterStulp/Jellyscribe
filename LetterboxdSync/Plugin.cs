@@ -126,11 +126,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             },
             new PluginPageInfo
             {
-                Name = "letterboxdsyncjs",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Web.configPage.js"
-            },
-            new PluginPageInfo
-            {
                 Name = "letterboxdstats",
                 EmbeddedResourcePath = $"{GetType().Namespace}.Web.statsPage.html",
             },

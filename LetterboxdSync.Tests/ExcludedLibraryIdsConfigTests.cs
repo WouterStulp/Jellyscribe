@@ -72,7 +72,7 @@ public class ExcludedLibraryIdsConfigTests
     [Fact]
     public void PluginConfiguration_JsonEcho_KeepsList()
     {
-        // configPage.js does getPluginConfiguration -> mutate -> updatePluginConfiguration.
+        // configPage.html does getPluginConfiguration -> mutate -> updatePluginConfiguration.
         var config = new PluginConfiguration();
         config.Accounts.Add(new Account { UserJellyfinId = "u1", ExcludedLibraryIds = { AnimeId } });
         config.SerializdAccounts.Add(new SerializdAccount { UserJellyfinId = "u1", ExcludedLibraryIds = { KidsId } });
