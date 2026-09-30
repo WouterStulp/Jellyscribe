@@ -10,6 +10,17 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '2.5.3',
+    headline: 'Later anime seasons log to Serializd instead of being skipped',
+    summary:
+      'Many anime are split into several seasons in Jellyfin but listed on Serializd as one long season. The Apothecary Diaries is a good example: Jellyfin shows a season 1 and a season 2, while Serializd, which follows TMDb, has one long season covering both. Watching season 2 in Jellyfin produced nothing on Serializd, because Jellyscribe asked for a season 2 that Serializd does not have and skipped the episode. Jellyscribe now recognises that shape and logs the episode to season 1 at its running number, so season 2 episode 1 lands on Serializd as episode 25. It only does this for shows Serializd keeps as a single season, and only when it knows exactly how many episodes the earlier seasons have, so a show Serializd simply has not added a new season for yet is still skipped rather than logged to the wrong episode.',
+    highlights: {
+      fixes: [
+        'Episodes from later seasons of shows Serializd lists as a single season (common for anime) are logged to Serializd instead of being skipped.',
+      ],
+    },
+  },
+  {
     version: '2.5.2',
     headline: 'The Raw cookies box no longer vanishes if you use an ad blocker',
     summary:
