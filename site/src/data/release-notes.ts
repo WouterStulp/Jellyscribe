@@ -10,6 +10,21 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '2.10.1',
+    headline: 'Renaming a Jellyfin user no longer empties their Jellyscribe history',
+    summary:
+      'If you renamed a Jellyfin user, their Jellyscribe dashboard suddenly showed zero films, zero episodes and no recent activity, as if nothing had ever been synced. Nothing was lost: every entry was still there, but each one was filed under the name the user had when it was written, and the dashboard only looked for the new name. The same mix-up quietly weakened the duplicate checks, so a film synced before the rename could be logged to Letterboxd a second time afterwards. History is now tied to the Jellyfin user itself rather than to their name, and existing entries are linked up automatically the first time this version starts. The one case this cannot repair on its own is a user who was already renamed before updating: their older entries stay filed under the old name.',
+    highlights: {
+      fixes: [
+        'The dashboard, stats and recent activity keep showing a user\'s history after their Jellyfin username changes.',
+        'Duplicate protection keeps recognising films and episodes synced before a rename, so they are not logged twice.',
+      ],
+      improvements: [
+        'Existing history is linked to its Jellyfin user automatically on first start, so a rename made after updating is handled too.',
+      ],
+    },
+  },
+  {
     version: '2.10.0',
     headline: 'Jellyscribe now opens inside Jellyfin, on Jellyfin 12 too',
     summary:
