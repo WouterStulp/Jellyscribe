@@ -279,11 +279,12 @@ public class PlaybackHandler : IHostedService, IDisposable
                         .CreateAuthenticatedAsync(account.Email, account.Password, _logger)
                         .ConfigureAwait(false);
 
-                    var seasonId = await service
-                        .ResolveSeasonIdAsync(epRef.ShowTmdbId, epRef.SeasonNumber)
+                    var target = await SerializdSeasonFallback
+                        .ResolveAsync(service, epRef.ShowTmdbId, epRef.SeasonNumber,
+                            () => SerializdSeasonFallback.SeasonLengthsReader(episode.Series))
                         .ConfigureAwait(false);
 
-                    if (seasonId == null)
+                    if (target == null)
                     {
                         _logger.LogWarning(
                             "Serializd has no season {Season} for TMDb show {TmdbId} ({Series}), skipping",
@@ -291,10 +292,17 @@ public class PlaybackHandler : IHostedService, IDisposable
                         continue;
                     }
 
+                    var seasonId = target.SeasonId;
+                    var serializdEpisodes = epRef.EpisodeNumbers.Select(n => n + target.EpisodeOffset).ToList();
+                    if (target.EpisodeOffset > 0)
+                        _logger.LogInformation(
+                            "Serializd lists {Series} as a single season; logging S{Season}E{Episode} as S1E{Absolute}",
+                            episode.SeriesName, epRef.SeasonNumber, epRef.EpisodeNumbers[0], serializdEpisodes[0]);
+
                     var userId = user.Id.ToString("N");
 
                     // 1. Mark the episodes watched (populates Shows/Stats).
-                    await service.LogEpisodesAsync(epRef.ShowTmdbId, seasonId.Value, epRef.EpisodeNumbers)
+                    await service.LogEpisodesAsync(epRef.ShowTmdbId, seasonId, serializdEpisodes)
                         .ConfigureAwait(false);
                     foreach (var n in epRef.EpisodeNumbers)
                         SerializdSyncHistory.Record(userId, account.Email, epRef.ShowTmdbId, epRef.SeasonNumber, n);
@@ -308,7 +316,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                         var isRewatch = SerializdSyncHistory.Has(
                             userId, account.Email, epRef.ShowTmdbId, epRef.SeasonNumber, n, SerializdSyncHistory.KindLog);
                         await service.CreateEpisodeLogAsync(
-                            epRef.ShowTmdbId, seasonId.Value, n, DateTime.UtcNow, rating, isRewatch)
+                            epRef.ShowTmdbId, seasonId, n + target.EpisodeOffset, DateTime.UtcNow, rating, isRewatch)
                             .ConfigureAwait(false);
                         SerializdSyncHistory.Record(
                             userId, account.Email, epRef.ShowTmdbId, epRef.SeasonNumber, n, SerializdSyncHistory.KindLog);
