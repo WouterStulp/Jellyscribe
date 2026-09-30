@@ -74,6 +74,9 @@ public static class SerializdActivity
 
     public static void Record(SyncEvent evt)
     {
+        if (string.IsNullOrEmpty(evt.UserId))
+            evt.UserId = SyncHistory.ResolveUserId(evt.Username);
+
         lock (_lock)
         {
             Load().Add(evt);
@@ -94,13 +97,36 @@ public static class SerializdActivity
         TelemetryService.OnTvSyncEvent(evt);
     }
 
+    public static int StampMissingUserIds()
+    {
+        lock (_lock)
+        {
+            var events = Load();
+            var stamped = SyncHistory.StampMissingUserIds(events);
+            if (stamped == 0) return 0;
+            try
+            {
+                File.WriteAllLines(DataPath, events.Select(e => JsonSerializer.Serialize(e)));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to save Serializd activity to {Path}", DataPath);
+            }
+            return stamped;
+        }
+    }
+
     public static (int Total, int Success, int Failed, int Skipped, int Rewatches) GetStats(string? username = null)
     {
         lock (_lock)
         {
             // Reviews show in the feed but aren't episode logs, so they don't count toward the stats.
             IEnumerable<SyncEvent> events = Load().Where(e => e.Source != "review");
-            if (!string.IsNullOrEmpty(username)) events = events.Where(e => e.Username == username);
+            if (!string.IsNullOrEmpty(username))
+            {
+                var userId = SyncHistory.ResolveUserId(username);
+                events = events.Where(e => SyncHistory.BelongsTo(e, username, userId));
+            }
             var list = events.ToList();
             return (
                 list.Count,

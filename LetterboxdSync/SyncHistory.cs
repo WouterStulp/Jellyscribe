@@ -43,6 +43,7 @@ public class SyncEvent
     public string FilmSlug { get; set; } = string.Empty;
     public int TmdbId { get; set; }
     public string Username { get; set; } = string.Empty;
+    public string? UserId { get; set; }
     public DateTime Timestamp { get; set; }
     public DateTime? ViewingDate { get; set; }
     public SyncStatus Status { get; set; }
@@ -70,6 +71,40 @@ public static class SyncHistory
     }
 
     public static void SetLogger(ILogger logger) => _logger = logger;
+
+    internal static Func<string, string?>? UserIdResolver { get; set; }
+
+    internal static string? ResolveUserId(string? username)
+        => string.IsNullOrEmpty(username) ? null : UserIdResolver?.Invoke(username);
+
+    internal static bool BelongsTo(SyncEvent e, string username, string? userId)
+        => !string.IsNullOrEmpty(e.UserId) && !string.IsNullOrEmpty(userId)
+            ? string.Equals(e.UserId, userId, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(e.Username, username, StringComparison.Ordinal);
+
+    public static int StampMissingUserIds()
+    {
+        lock (_lock)
+        {
+            var stamped = StampMissingUserIds(LoadEvents());
+            if (stamped > 0) SaveAllEvents();
+            return stamped;
+        }
+    }
+
+    internal static int StampMissingUserIds(IEnumerable<SyncEvent> events)
+    {
+        var stamped = 0;
+        foreach (var e in events)
+        {
+            if (!string.IsNullOrEmpty(e.UserId)) continue;
+            var id = ResolveUserId(e.Username);
+            if (string.IsNullOrEmpty(id)) continue;
+            e.UserId = id;
+            stamped++;
+        }
+        return stamped;
+    }
 
     private static string DataPath
     {
@@ -160,6 +195,9 @@ public static class SyncHistory
 
     public static void Record(SyncEvent evt)
     {
+        if (string.IsNullOrEmpty(evt.UserId))
+            evt.UserId = ResolveUserId(evt.Username);
+
         lock (_lock)
         {
             var events = LoadEvents();
@@ -194,7 +232,10 @@ public static class SyncHistory
             IEnumerable<SyncEvent> filtered = events;
 
             if (!string.IsNullOrEmpty(username))
-                filtered = filtered.Where(e => e.Username == username);
+            {
+                var userId = ResolveUserId(username);
+                filtered = filtered.Where(e => BelongsTo(e, username, userId));
+            }
 
             return filtered.OrderByDescending(e => e.Timestamp).Take(count).ToList();
         }
@@ -217,7 +258,10 @@ public static class SyncHistory
     {
         IEnumerable<SyncEvent> filtered = events;
         if (!string.IsNullOrEmpty(username))
-            filtered = filtered.Where(e => e.Username == username);
+        {
+            var userId = ResolveUserId(username);
+            filtered = filtered.Where(e => BelongsTo(e, username, userId));
+        }
 
         var ordered = filtered.OrderByDescending(e => e.Timestamp).ToList();
         var safeOffset = Math.Max(0, offset);
@@ -255,11 +299,12 @@ public static class SyncHistory
 
     internal static SyncStatus? GetLastStatusForFilm(IEnumerable<SyncEvent> events, string username, int tmdbId)
     {
+        var userId = ResolveUserId(username);
         SyncEvent? latest = null;
         foreach (var e in events)
         {
             if (e.TmdbId != tmdbId) continue;
-            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (!BelongsTo(e, username, userId)) continue;
             if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
         }
         return latest?.Status;
@@ -281,8 +326,9 @@ public static class SyncHistory
 
     internal static int GetConsecutiveFailureCount(IEnumerable<SyncEvent> events, string username, int tmdbId)
     {
+        var userId = ResolveUserId(username);
         var ordered = events
-            .Where(e => e.TmdbId == tmdbId && string.Equals(e.Username, username, StringComparison.Ordinal))
+            .Where(e => e.TmdbId == tmdbId && BelongsTo(e, username, userId))
             .OrderByDescending(e => e.Timestamp);
 
         var count = 0;
@@ -296,11 +342,12 @@ public static class SyncHistory
 
     internal static bool WasSuccessfullySynced(IEnumerable<SyncEvent> events, string username, int tmdbId, DateTime viewingDate)
     {
+        var userId = ResolveUserId(username);
         var target = viewingDate.Date;
         foreach (var e in events)
         {
             if (e.TmdbId != tmdbId) continue;
-            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (!BelongsTo(e, username, userId)) continue;
             if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
             if (e.ViewingDate?.Date == target) return true;
         }
@@ -324,11 +371,12 @@ public static class SyncHistory
 
     internal static DateTime? GetLastSuccessfulSyncDate(IEnumerable<SyncEvent> events, string username, int tmdbId)
     {
+        var userId = ResolveUserId(username);
         SyncEvent? latest = null;
         foreach (var e in events)
         {
             if (e.TmdbId != tmdbId) continue;
-            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (!BelongsTo(e, username, userId)) continue;
             if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
             if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
         }
@@ -351,10 +399,11 @@ public static class SyncHistory
 
     internal static bool WasImportedFromDiary(IEnumerable<SyncEvent> events, string username, int tmdbId)
     {
+        var userId = ResolveUserId(username);
         foreach (var e in events)
         {
             if (e.TmdbId != tmdbId) continue;
-            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (!BelongsTo(e, username, userId)) continue;
             if (string.Equals(e.Source, SyncEventSources.DiaryImport, StringComparison.Ordinal))
                 return true;
         }
@@ -369,7 +418,10 @@ public static class SyncHistory
             IEnumerable<SyncEvent> filtered = events;
 
             if (!string.IsNullOrEmpty(username))
-                filtered = filtered.Where(e => e.Username == username);
+            {
+                var userId = ResolveUserId(username);
+                filtered = filtered.Where(e => BelongsTo(e, username, userId));
+            }
 
             var list = filtered.ToList();
             return (
