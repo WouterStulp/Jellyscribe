@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.6.0.0",
+        "changelog": "Until now Jellyscribe sent every film and episode you finished to your linked accounts, whichever library it lived in. If you already track some of that somewhere else, anime on AniList for example, those watches were turning up on Letterboxd or Serializd as well, and the only way to stop it was to switch the whole account off. Each linked account now has an Excluded libraries list in its settings. Tick a library there and nothing from it is sent to that account, whether by the daily catch-up or the moment you finish watching. The setting is per account, so two people sharing a Jellyfin login can make different choices, and a library you leave unticked syncs exactly as before. Exclusion only applies from now on: anything already logged stays where it is, and diary import and watchlist sync still look at every library.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.6.0/jellyfin-plugin-letterboxd-v2.6.0.zip",
+        "checksum": "8d27cfbad84b2efa344b158e83daf6e2",
+        "timestamp": "2026-10-03T06:53:28Z"
+      },
+      {
         "version": "2.5.4.0",
         "changelog": "In Jellyfin's Scheduled Tasks page, most of Jellyscribe's tasks were still filed under a heading called Letterboxd, left over from before the plugin was renamed, while one sat under Jellyscribe. That even put the Serializd tasks for TV under Letterboxd. Every Jellyscribe task, film and TV alike, now appears together under Jellyscribe. Nothing about how or when the tasks run has changed.",
         "targetAbi": "10.11.9.0",
