@@ -40,15 +40,18 @@ Deploy a debug build to the local Jellyfin server: `./deploy.sh` (scp's `Jellysc
 ### Sync entry points
 
 - `SyncTask`, scheduled, exports recent watches to the Letterboxd diary.
+- `Serializd/SerializdSyncTask` / `SerializdSyncRunner`, scheduled, exports played episodes to Serializd.
 - `WatchlistSyncTask` / `WatchlistSyncRunner`, imports the user's Letterboxd watchlist as a Jellyfin playlist.
 - `DiaryImportTask`, marks Jellyfin items as played if present in the Letterboxd diary.
 - `PlaybackHandler`, `IHostedService` registered in `ServiceRegistrator`, fires the real-time sync on playback completion.
 - `LetterboxdSyncRunner`, shared engine used by `SyncTask` and `PlaybackHandler`; `SyncGate`, `SyncHistory`, `SyncProgress`, and `TmdbCache` coordinate dedupe, progress UI, and TMDb lookups.
+- `LibraryExclusion.IsExcluded` is the one per-account "excluded library" rule (issue #124). Every export path (both scheduled runners and `PlaybackHandler`) calls it before handing an item to a service client, so it is a pre-filter above `ILetterboxdService`, never a check inside either implementation. Import paths deliberately ignore it.
 
 ### Plugin surface
 
 - `Plugin.cs` + `ServiceRegistrator.cs` register services and config.
 - `Api/LetterboxdController.cs` and `Api/SidebarController.cs` expose REST endpoints consumed by the config dashboard. `LetterboxdController` also serves the read-only `ItemRating` endpoint the review modal uses to pre-fill its stars from the caller's stored Jellyfin rating.
+- `Api/LibrariesController.cs` lists the film, TV, and mixed libraries the caller can access, for the per-account "Excluded libraries" checklist on both settings pages (Jellyfin's own `/Library/VirtualFolders` is admin-only).
 - `Web/*.html` and `Web/*.js` are embedded resources (see `LetterboxdSync.csproj`) served as the plugin's config pages.
 - `SidebarInjection.cs` registers a transformation with the File Transformation plugin to inject the sidebar link.
 

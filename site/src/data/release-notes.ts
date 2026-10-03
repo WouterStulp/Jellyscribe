@@ -10,6 +10,21 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '2.6.0',
+    headline: 'Keep a whole library off Letterboxd or Serializd',
+    summary:
+      'Until now Jellyscribe sent every film and episode you finished to your linked accounts, whichever library it lived in. If you already track some of that somewhere else, anime on AniList for example, those watches were turning up on Letterboxd or Serializd as well, and the only way to stop it was to switch the whole account off. Each linked account now has an Excluded libraries list in its settings. Tick a library there and nothing from it is sent to that account, whether by the daily catch-up or the moment you finish watching. The setting is per account, so two people sharing a Jellyfin login can make different choices, and a library you leave unticked syncs exactly as before. Exclusion only applies from now on: anything already logged stays where it is, and diary import and watchlist sync still look at every library.',
+    highlights: {
+      new: [
+        'An Excluded libraries list on every Letterboxd and Serializd account, in both the admin dashboard and your own settings page.',
+        'Films and episodes from an excluded library are skipped by the daily catch-up and by real-time sync alike, and the server log notes how many were skipped.',
+      ],
+      improvements: [
+        'The library list only shows libraries you can actually see, and only the ones that hold films or TV.',
+      ],
+    },
+  },
+  {
     version: '2.5.4',
     headline: 'All of Jellyscribe\'s scheduled tasks now sit under one Jellyscribe heading',
     summary:

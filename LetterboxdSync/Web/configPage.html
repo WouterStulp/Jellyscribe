@@ -363,6 +363,7 @@
                     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;"><button type="button" class="ws-btn" id="mVerifyBtn">Verify login</button><span id="mVerifyStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                     <div class="ws-checks" id="mChecks"></div>
                     <div class="ws-row" id="mWatchNameRow" style="margin-top:12px;"><label class="ws-field">Watchlist name <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mWatchName" placeholder="" /></div>
+                    <div class="ws-row" id="mLibRow" style="display:none;margin-top:12px;"><label class="ws-field">Excluded libraries <span class="ws-muted" style="text-transform:none;">(never synced to this account; applies to future syncs)</span></label><div class="ws-checks" id="mLibs"></div></div>
                     <div style="display:flex;gap:10px;margin-top:18px;align-items:center;">
                         <button type="button" class="ws-btn primary" id="mSaveBtn">Save</button>
                         <button type="button" class="ws-btn" id="mCancelBtn">Cancel</button>
@@ -407,6 +408,7 @@
                         pageSize: 25,
                         actOffset: 0, actTotal: 0,
                         editing: null,
+                        libraries: null,
 
                         ensureViewport: function () {
                             try {
@@ -435,6 +437,11 @@
                                         self.renderAccounts();
                                     }).catch(function () { });
                                     self.loadOverview();
+                                    // Libraries for the per-account exclusion list. Fail-soft: null means
+                                    // "unknown", and saving then keeps each account's stored list untouched.
+                                    ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Libraries')).then(function (d) {
+                                        self.libraries = (d && d.libraries) || [];
+                                    }).catch(function () { });
                                     document.getElementById('jellyseerrUrl').value = c.JellyseerrUrl || '';
                                     document.getElementById('jellyseerrApiKey').value = c.JellyseerrApiKey || '';
                                     // Default on: older configs predate the field, and the option exists
@@ -775,6 +782,20 @@
                             }).join('') +
                             '<div class="ws-row" id="dateDaysRow" style="display:' + (a.EnableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.DateFilterDays || 7) + '" /></div>';
                         },
+                        // Stored ids for libraries this page listed are replaced by what is ticked; ids for
+                        // libraries it did not list are kept, so a partial or failed library list can never
+                        // silently clear an exclusion. That also keeps ids of deleted libraries, which is
+                        // harmless: they match nothing.
+                        mergeExcluded: function (stored, ticked) {
+                            var shown = (this.libraries || []).map(function (l) { return l.id; });
+                            return stored.filter(function (id) { return shown.indexOf(id) < 0; }).concat(ticked);
+                        },
+                        libsFor: function (a) {
+                            var self = this, excluded = (a && a.ExcludedLibraryIds) || [];
+                            return (self.libraries || []).map(function (l) {
+                                return '<label><input type="checkbox" class="mLibChk" data-id="' + self.escAttr(l.id) + '"' + (excluded.indexOf(l.id) >= 0 ? ' checked' : '') + ' /><span>' + self.escAttr(l.name) + '<span class="desc">' + ({ movies: 'Films', tvshows: 'TV', mixed: 'Mixed' }[l.collectionType] || 'Mixed') + '</span></span></label>';
+                            }).join('');
+                        },
                         onSvcChange: function () {
                             var svc = document.getElementById('mSvc').value;
                             document.getElementById('mUserLabel').textContent = svc === 'serializd' ? 'Email or username' : 'Letterboxd username';
@@ -805,6 +826,8 @@
                             document.getElementById('mVerifyStatus').textContent = ''; document.getElementById('mStatus').textContent = '';
                             document.getElementById('mDeleteBtn').style.display = a ? '' : 'none';
                             document.getElementById('mChecks').innerHTML = self.checksFor(svc || 'serializd', a);
+                            document.getElementById('mLibs').innerHTML = self.libsFor(a);
+                            document.getElementById('mLibRow').style.display = (self.libraries || []).length ? 'block' : 'none';
                             document.getElementById('chkDate').addEventListener('change', function () { document.getElementById('dateDaysRow').style.display = this.checked ? 'block' : 'none'; });
                             self.onSvcChange();
                             document.getElementById('acctModal').classList.add('show');
@@ -818,19 +841,21 @@
                                 enabled: g('chkEnabled').checked, fav: g('chkFav').checked, date: g('chkDate').checked, days: parseInt(g('chkDateDays').value, 10) || 7,
                                 primary: g('chkPrimary').checked, watch: g('chkWatch').checked, seerr: g('chkSeerr').checked,
                                 backfill: g('chkBackfill').checked, mirror: g('chkMirror').checked,
-                                skip: g('chkSkip').checked, stop: g('chkStop').checked, imp: g('chkImport').checked
+                                skip: g('chkSkip').checked, stop: g('chkStop').checked, imp: g('chkImport').checked,
+                                libs: Array.prototype.map.call(document.querySelectorAll('#mLibs .mLibChk:checked'), function (x) { return x.getAttribute('data-id'); })
                             };
                         },
                         saveAccount: function () {
                             var self = this, m = self.collectModal();
                             if (!m.username) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Username/email is required.</span>'; return; }
                             var orig = self.editing.original;
+                            var excludedLibs = self.mergeExcluded((orig && orig.ExcludedLibraryIds) || [], m.libs);
                             if (m.svc === 'serializd') {
                                 self.config.SerializdAccounts = (self.config.SerializdAccounts || []).filter(function (x) { return x !== orig; });
-                                self.config.SerializdAccounts.push({ UserJellyfinId: m.userId, Email: m.username, Password: m.password, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, SyncWatchlist: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, WatchlistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp });
+                                self.config.SerializdAccounts.push({ UserJellyfinId: m.userId, Email: m.username, Password: m.password, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, SyncWatchlist: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, WatchlistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });
                             } else {
                                 self.config.Accounts = (self.config.Accounts || []).filter(function (x) { return x !== orig; });
-                                self.config.Accounts.push({ UserJellyfinId: m.userId, LetterboxdUsername: m.username, LetterboxdPassword: m.password, RawCookies: m.cookies || null, UserAgent: m.userAgent || null, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, EnableWatchlistSync: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, PlaylistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp });
+                                self.config.Accounts.push({ UserJellyfinId: m.userId, LetterboxdUsername: m.username, LetterboxdPassword: m.password, RawCookies: m.cookies || null, UserAgent: m.userAgent || null, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, EnableWatchlistSync: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, PlaylistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });
                             }
                             document.getElementById('mStatus').textContent = 'Saving…';
                             ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {

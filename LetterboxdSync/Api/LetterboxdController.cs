@@ -256,6 +256,7 @@ public class LetterboxdController : JellyfinUserApiController
                 mirrorJellyseerrWatchlist = false,
                 skipPreviouslySynced = true,
                 stopOnFailure = false,
+                excludedLibraryIds = new List<string>(),
                 isConfigured = false
             });
         }
@@ -277,6 +278,7 @@ public class LetterboxdController : JellyfinUserApiController
             mirrorJellyseerrWatchlist = account.MirrorJellyseerrWatchlist,
             skipPreviouslySynced = account.SkipPreviouslySynced,
             stopOnFailure = account.StopOnFailure,
+            excludedLibraryIds = account.ExcludedLibraryIds,
             isConfigured = true
         });
     }
@@ -330,6 +332,7 @@ public class LetterboxdController : JellyfinUserApiController
         account.MirrorJellyseerrWatchlist = request.MirrorJellyseerrWatchlist;
         account.SkipPreviouslySynced = request.SkipPreviouslySynced;
         account.StopOnFailure = request.StopOnFailure;
+        account.ExcludedLibraryIds = LibraryExclusion.ResolveForSave(request.ExcludedLibraryIds, account.ExcludedLibraryIds);
 
         // IsPrimary and PlaylistName are deliberately NOT copied from the request.
         // The userPage form does not expose them; deserialisation would set them to
@@ -387,7 +390,8 @@ public class LetterboxdController : JellyfinUserApiController
                 skipPreviouslySynced = a.SkipPreviouslySynced,
                 stopOnFailure = a.StopOnFailure,
                 isPrimary = a.IsPrimary,
-                playlistName = a.PlaylistName
+                playlistName = a.PlaylistName,
+                excludedLibraryIds = a.ExcludedLibraryIds
             })
             .ToList();
 
@@ -425,6 +429,7 @@ public class LetterboxdController : JellyfinUserApiController
         // page is the only path that should touch other users' rows; this endpoint
         // is per-user scope.
         var preserved = Config.Accounts.Where(a => a.UserJellyfinId != userId).ToList();
+        var previous = Config.Accounts.Where(a => a.UserJellyfinId == userId).ToList();
 
         var mine = new List<Account>();
         foreach (var req in request.Accounts)
@@ -448,7 +453,10 @@ public class LetterboxdController : JellyfinUserApiController
                 SkipPreviouslySynced = req.SkipPreviouslySynced,
                 StopOnFailure = req.StopOnFailure,
                 IsPrimary = req.IsPrimary,
-                PlaylistName = string.IsNullOrWhiteSpace(req.PlaylistName) ? null : req.PlaylistName.Trim()
+                PlaylistName = string.IsNullOrWhiteSpace(req.PlaylistName) ? null : req.PlaylistName.Trim(),
+                // A client that omits the field keeps the account's stored exclusions.
+                ExcludedLibraryIds = LibraryExclusion.ResolveForSave(req.ExcludedLibraryIds,
+                    previous.FirstOrDefault(p => string.Equals(p.LetterboxdUsername, req.LetterboxdUsername, StringComparison.OrdinalIgnoreCase))?.ExcludedLibraryIds)
             });
         }
 
