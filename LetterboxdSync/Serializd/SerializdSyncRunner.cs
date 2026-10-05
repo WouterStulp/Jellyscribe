@@ -285,7 +285,12 @@ public class SerializdSyncRunner
             .Where(r => !AlreadyLogged(r) && seenLog.Add((r.Show, r.Season, r.Episode)))
             .ToList();
 
-        if (needsWatched.Count == 0 && needsLog.Count == 0)
+        bool Finished(int show) => SerializdShowStatus.FinishedReader(seriesById.GetValueOrDefault(show),
+            ep => _userDataManager.GetUserData(user, ep)?.Played == true);
+        var statusPending = records.Select(r => r.Show).Distinct()
+            .Any(show => SerializdShowStatus.IsPending(userId, account.Email, show, () => Finished(show)));
+
+        if (needsWatched.Count == 0 && needsLog.Count == 0 && !statusPending)
         {
             _logger.LogDebug("Serializd catch-up: nothing new for {Username} as {Account}", user.Username, LogRedaction.AccountTag(account.Email));
             return;
@@ -467,6 +472,24 @@ public class SerializdSyncRunner
             watchedShows.Add(r.Show);
         if (watchedShows.Count == 0)
             return;
+
+        foreach (var tmdb in watchedShows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (await SerializdShowStatus.MarkCurrentlyWatchingAsync(service, userId, account.Email, tmdb,
+                        () => SerializdShowStatus.FinishedReader(seriesById.GetValueOrDefault(tmdb),
+                            ep => _userDataManager.GetUserData(user, ep)?.Played == true))
+                    .ConfigureAwait(false))
+                    _logger.LogInformation("Serializd: marked TMDb {Show} as currently watching for {Username}", tmdb, user.Username);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Serializd: failed marking TMDb {Show} as currently watching for {Username}: {Message}",
+                    tmdb, user.Username, ex.Message);
+            }
+        }
 
         // The episode scan in SyncOneAsync already resolved each played episode's parent
         // Series; reuse that instead of a second full-library BaseItemKind.Series query.

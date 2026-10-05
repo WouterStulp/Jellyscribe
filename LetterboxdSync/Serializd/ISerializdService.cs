@@ -59,6 +59,8 @@ public interface ISerializdService : IDisposable
     /// <param name="like">True to heart the show (Jellyfin favorite).</param>
     Task SetShowMetaAsync(int showTmdbId, int? rating, bool like, CancellationToken cancellationToken = default);
 
+    Task SetCurrentlyWatchingAsync(int showTmdbId);
+
     /// <summary>
     /// Returns the authenticated user's Serializd watchlist: each show (TMDb id) plus the
     /// specific season numbers watchlisted (empty = the whole show / no season detail).

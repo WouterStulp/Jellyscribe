@@ -547,6 +547,17 @@ public class SerializdApiClient : ISerializdService
         }
     }
 
+    public async Task SetCurrentlyWatchingAsync(int showTmdbId)
+    {
+        var body = JsonSerializer.Serialize(new Dictionary<string, object> { ["show_id"] = showTmdbId });
+        using var resp = await SendAsync(HttpMethod.Post, "/currently_watching", body).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            throw new Exception($"Serializd currently-watching ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
+        }
+    }
+
     /// <param name="cancellationToken">Cancels the waits (the request gate, backoff and a
     /// rate-limit pause) and a read in flight, never a write already sent: Serializd may have
     /// applied it.</param>

@@ -63,6 +63,8 @@ public static class SerializdSyncHistory
     /// <summary>Show-level rating/like sync (one per show; season+episode are 0 sentinels).</summary>
     public const string KindShowMeta = "showmeta";
 
+    public const string KindCurrentlyWatching = "watching";
+
     private static string Key(string userJellyfinId, string accountEmail, int showTmdbId, int seasonNumber, int episodeNumber, string kind)
     {
         var baseKey = $"{userJellyfinId}|{accountEmail}|{showTmdbId}|{seasonNumber}|{episodeNumber}";
