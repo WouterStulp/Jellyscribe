@@ -59,7 +59,6 @@ Full feature parity with the Letterboxd side: real-time sync, ratings, reviews, 
 ### Dashboard & diagnostics
 
 - **Dashboard**, sync stats, activity history, and one-click sync from the plugin page
-- **Send logs to developer**, one-click diagnostic bundle from the Logs tab, with a full preview of what's sent and a reference code to quote in a bug report
 - **Cloudflare resilient**, automatic retry with backoff on rate limits and transient Letterboxd errors, raw cookie fallback
 
 ## Install
@@ -149,46 +148,9 @@ When a correctly-copied cookie still gets blocked, it's usually one of these:
 
 If you've ruled all three out and a single film keeps getting stuck on the TMDb lookup, open an issue. A workaround that skips the Cloudflare-protected lookup for that one film (pointing a TMDb ID directly at a Letterboxd slug) is being considered.
 
-## Telemetry
+## Privacy
 
-The plugin can send **anonymous, opt-in** usage telemetry. It is **off by default**, nothing is ever sent unless you enable it (one-time dashboard banner or the Settings checkbox).
-
-When enabled, one small ping is sent per week, plus one extra ping (capped at one per day) when sync errors start occurring so fleet-wide breakage gets caught early. The full payload is exactly this, you can see your own at any time via **Settings → Anonymous Telemetry → Preview exact JSON**:
-
-```json
-{
-  "schema_version": 1,
-  "instance_id": "8a6f4f6e-1f2b-4c43-9a57-2f0e6f3b9d1c",
-  "ping_type": "weekly",
-  "plugin_version": "2.1.0.0",
-  "jellyfin_version": "10.11.11",
-  "features": { "watchlist_sync": true, "diary_import": false, "tv_watchlist_sync": false, "tv_diary_import": false,
-                 "...": "booleans of which Letterboxd and Serializd settings are enabled" },
-  "buckets": { "accounts": "1", "library": "2k-10k", "syncs_per_week": "1-10", "syncs_ever": "11-100",
-               "tv_syncs_per_week": "0", "tv_syncs_ever": "0" },
-  "errors": { "cloudflare_403": 0, "auth_failure": 0, "tmdb_lookup": 0, "jellyseerr_error": 0, "rate_limit": 0, "other": 0,
-              "state": { "cloudflare_403": false, "...": "which error types are currently occurring" } }
-}
-```
-
-The precise promise, worded carefully:
-
-- **No IPs, usernames, film titles, library content, or exact counts ever enter the dataset.** Counts are reported in buckets only. (Transport logs at the hosting platform retain caller IPs for the platform's own short retention window, like any HTTPS service; they are never stored in the telemetry dataset.)
-- The instance ID is **random**, generated when you opt in, never derived from your hardware, network, or Jellyfin install. **Regenerate it any time** in Settings: future pings get a fresh identity. Old rows remain (unlinked going forward); at small fleet sizes configuration similarity could in principle still allow correlation, so the honest claim is "unlinked", not "erased".
-- The "Preview exact JSON" modal doubles as a **diagnostic bundle** for bug reports. It contains your instance ID, pasting it into a public issue links that ID to your past pings, which is why the modal offers **Copy + regenerate ID**.
-- Disabling telemetry stops all pings immediately.
-
-What it's for: deciding what gets built next based on what people actually use, and an automated canary that compares error rates across releases and files regression issues before bug reports arrive.
-
-### Install counting
-
-This fork's plugin repository and release downloads are served straight from GitHub, so nothing counts installs. Telemetry and **Send logs to developer** below still go to the upstream project's endpoints; leave telemetry off and don't send logs if you'd rather nothing leaves your server.
-
-### Send logs to the developer
-
-When something goes wrong, the **Logs** tab has a **Send logs to developer** button. It packages the recent Jellyscribe log lines shown on that tab (passwords, cookies, and auth tokens are never logged) plus an anonymous telemetry snapshot, uploads them privately, and gives you a short **reference code** (e.g. `LBX-7Q2F9K`) to quote if you open a bug report.
-
-Unlike the anonymous telemetry above, **logs are not anonymous**, they can contain your Letterboxd username or film titles, and the bundle is linked to your telemetry instance ID. So it is strictly opt-in per use: a confirmation step spells this out, lets you add a note describing the problem, and offers a preview of exactly what is sent before anything leaves your server. Works whether or not telemetry is enabled. Uploaded bundles are stored privately and auto-deleted after 90 days.
+This fork sends nothing anywhere except to the services you link: Letterboxd, Serializd and your own Seerr. The upstream plugin's usage telemetry, "Send logs to developer" upload, and install-counting repository mirror are removed.
 
 ## Requirements
 
