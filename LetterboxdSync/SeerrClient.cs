@@ -16,9 +16,19 @@ namespace LetterboxdSync;
 /// </summary>
 public class SeerrClient : IDisposable
 {
+    // One process-wide client: a client per instance opened a fresh connection pool every
+    // sync and every dashboard check. The API key is per configuration, so it goes on each
+    // request rather than on the shared client's default headers.
+    private static readonly HttpClient SharedHttp = WithDefaultHeaders(new HttpClient(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    }));
+
     private readonly HttpClient _http;
+    private readonly bool _ownsHttp;
     private readonly ILogger _logger;
     private readonly string _baseUrl;
+    private readonly string _apiKey;
 
     private readonly bool _autoApprove;
 
@@ -30,9 +40,35 @@ public class SeerrClient : IDisposable
         _baseUrl = baseUrl.TrimEnd('/');
         _logger = logger;
         _autoApprove = autoApprove;
-        _http = handler != null ? new HttpClient(handler) : new HttpClient();
-        _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("X-Api-Key", apiKey);
+        _apiKey = apiKey;
+        _ownsHttp = handler != null;
+        _http = handler != null ? WithDefaultHeaders(new HttpClient(handler)) : SharedHttp;
+    }
+
+    internal HttpClient HttpForTesting => _http;
+
+    private static HttpClient WithDefaultHeaders(HttpClient http)
+    {
+        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        return http;
+    }
+
+    private async Task<HttpResponseMessage> GetAsync(string url)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        return await SendAsync(request).ConfigureAwait(false);
+    }
+
+    private async Task<HttpResponseMessage> PostAsync(string url, HttpContent content)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+        return await SendAsync(request).ConfigureAwait(false);
+    }
+
+    private Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
+    {
+        request.Headers.TryAddWithoutValidation("X-Api-Key", _apiKey);
+        return _http.SendAsync(request);
     }
 
     /// <summary>Returns true if the client looks usable (URL + key set).</summary>
@@ -61,7 +97,7 @@ public class SeerrClient : IDisposable
         while (true)
         {
             var url = $"{_baseUrl}/api/v1/user?take={take}&skip={skip}";
-            using var response = await _http.GetAsync(url).ConfigureAwait(false);
+            using var response = await GetAsync(url).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
@@ -116,7 +152,7 @@ public class SeerrClient : IDisposable
         var url = $"{_baseUrl}/api/v1/movie/{tmdbId}";
         try
         {
-            using var response = await _http.GetAsync(url).ConfigureAwait(false);
+            using var response = await GetAsync(url).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogDebug("Seerr movie lookup non-success for TMDb {TmdbId}: {Status}",
@@ -177,7 +213,7 @@ public class SeerrClient : IDisposable
         var url = $"{_baseUrl}/api/v1/tv/{tmdbId}";
         try
         {
-            using var response = await _http.GetAsync(url).ConfigureAwait(false);
+            using var response = await GetAsync(url).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogDebug("Seerr TV lookup non-success for TMDb {TmdbId}: {Status}",
@@ -265,7 +301,7 @@ public class SeerrClient : IDisposable
         var body = $"{{\"mediaType\":\"movie\",\"mediaId\":{tmdbId},\"userId\":{jellyseerrUserId}}}";
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        using var response = await _http.PostAsync(url, content).ConfigureAwait(false);
+        using var response = await PostAsync(url, content).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         if (response.IsSuccessStatusCode)
@@ -309,7 +345,7 @@ public class SeerrClient : IDisposable
         var body = $"{{\"mediaType\":\"tv\",\"mediaId\":{tmdbId},\"userId\":{jellyseerrUserId},\"seasons\":{seasonsJson}}}";
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        using var response = await _http.PostAsync(url, content).ConfigureAwait(false);
+        using var response = await PostAsync(url, content).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         var seasonsLabel = seasonNumbers.Count > 0 ? string.Join(",", seasonNumbers) : "all";
 
@@ -414,7 +450,7 @@ public class SeerrClient : IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("X-API-User",
                 jellyseerrUserId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            using var response = await _http.SendAsync(request).ConfigureAwait(false);
+            using var response = await SendAsync(request).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 var errBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -481,7 +517,7 @@ public class SeerrClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         request.Headers.TryAddWithoutValidation("X-API-User", jellyseerrUserId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        using var response = await _http.SendAsync(request).ConfigureAwait(false);
+        using var response = await SendAsync(request).ConfigureAwait(false);
         if (response.IsSuccessStatusCode)
             return true;
 
@@ -506,7 +542,7 @@ public class SeerrClient : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Delete, url);
         request.Headers.TryAddWithoutValidation("X-API-User", jellyseerrUserId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        using var response = await _http.SendAsync(request).ConfigureAwait(false);
+        using var response = await SendAsync(request).ConfigureAwait(false);
         if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound)
             return true;
 
@@ -576,7 +612,7 @@ public class SeerrClient : IDisposable
         try
         {
             using var content = new StringContent("{}", Encoding.UTF8, "application/json");
-            using var response = await _http.PostAsync(url, content).ConfigureAwait(false);
+            using var response = await PostAsync(url, content).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
             {
                 _logger.LogInformation(
@@ -644,7 +680,7 @@ public class SeerrClient : IDisposable
             (int RawCount, List<(int RequestId, int TmdbId)> Matches) page;
             try
             {
-                using var response = await _http.GetAsync(url).ConfigureAwait(false);
+                using var response = await GetAsync(url).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Seerr pending-request lookup failed ({Status}); skipping backlog reconcile.",
@@ -769,5 +805,9 @@ public class SeerrClient : IDisposable
 
     private static string Truncate(string s, int max) => s.Length > max ? s.Substring(0, max) + "..." : s;
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        if (_ownsHttp)
+            _http.Dispose();
+    }
 }
