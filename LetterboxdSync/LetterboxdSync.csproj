@@ -34,6 +34,8 @@
     <EmbeddedResource Include="Web\configPage.html" />
     <EmbeddedResource Include="Web\userPage.html" />
     <EmbeddedResource Include="Web\sidebar.js" />
+    <EmbeddedResource Include="Web\jellyscribe.js" />
+    <EmbeddedResource Include="Web\jellyscribe.css" />
   </ItemGroup>
 
 </Project>

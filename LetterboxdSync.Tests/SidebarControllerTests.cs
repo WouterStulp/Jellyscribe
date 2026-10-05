@@ -42,6 +42,49 @@ public class SidebarControllerTests
         Assert.Equal(expected.ToArray(), served.ToArray());
     }
 
+    /// <summary>
+    /// Both config pages load jellyscribe.js and jellyscribe.css at runtime; a missing embed or route
+    /// leaves them stuck on "Couldn't load the Jellyscribe page".
+    /// </summary>
+    [Theory]
+    [InlineData("jellyscribe.js", "application/javascript", "window.JellyscribeShared")]
+    [InlineData("jellyscribe.css", "text/css", ".ws-app")]
+    public void SharedPageAssets_AreEmbeddedAndServedVerbatim(string file, string contentType, string marker)
+    {
+        var controller = new SidebarController();
+        var result = file.EndsWith(".css", System.StringComparison.Ordinal) ? controller.GetSharedCss() : controller.GetSharedJs();
+
+        var served = Assert.IsType<FileStreamResult>(result);
+        Assert.Equal(contentType, served.ContentType);
+        using var servedBytes = new MemoryStream();
+        served.FileStream.CopyTo(servedBytes);
+
+        using var resource = typeof(SidebarController).Assembly.GetManifestResourceStream("LetterboxdSync.Web." + file);
+        Assert.NotNull(resource);
+        using var expected = new MemoryStream();
+        resource!.CopyTo(expected);
+
+        Assert.Equal(expected.ToArray(), servedBytes.ToArray());
+        Assert.Contains(marker, System.Text.Encoding.UTF8.GetString(servedBytes.ToArray()));
+    }
+
+    /// <summary>The pages fetch the shared assets from the routes this controller serves.</summary>
+    [Theory]
+    [InlineData("LetterboxdSync.Web.configPage.html")]
+    [InlineData("LetterboxdSync.Web.userPage.html")]
+    public void ConfigPages_LoadTheSharedAssets(string resourceName)
+    {
+        using var stream = typeof(SidebarController).Assembly.GetManifestResourceStream(resourceName);
+        Assert.NotNull(stream);
+        using var reader = new StreamReader(stream!);
+        var page = reader.ReadToEnd();
+
+        Assert.Contains("'LetterboxdSync/Web/' + file", page);
+        Assert.Contains("sharedAsset('script', 'jellyscribe.js')", page);
+        Assert.Contains("sharedAsset('link', 'jellyscribe.css')", page);
+        Assert.Contains("ws-app", page);
+    }
+
     [Fact]
     public void GetSidebarJs_NavLinkLabelIsJellyscribe()
     {
