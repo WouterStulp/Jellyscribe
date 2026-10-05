@@ -6,6 +6,15 @@
     "description": "Automatically syncs your Jellyfin watch history to your Letterboxd diary (films) and Serializd diary (TV). Supports multiple users, real-time sync on playback completion, duplicate detection, retry with backoff, and TMDb-based matching.",
     "category": "General",
     "owner": "WouterStulp",
-    "versions": []
+    "versions": [
+      {
+        "version": "2.10.0.1",
+        "changelog": "Based on Jellyscribe 2.10.0, plus two fixes that are not in the official release yet. Renaming a Jellyfin user no longer empties their history or weakens the duplicate checks, because history is now tied to the Jellyfin user rather than their name. Later seasons of anime that Serializd lists as one long season, such as The Apothecary Diaries season 2, are logged to Serializd at their running episode number instead of being skipped.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/WouterStulp/Jellyscribe/releases/download/v2.10.0.1/jellyscribe-v2.10.0.1.zip",
+        "checksum": "41f34a4c0fd83b8483761c8f91ccb8bd",
+        "timestamp": "2026-10-05T09:15:03Z"
+      }
+    ]
   }
 ]
