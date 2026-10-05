@@ -807,8 +807,7 @@ public class LetterboxdController : JellyfinUserApiController
 
     /// <summary>
     /// Reads ALL recent LetterboxdSync-tagged lines from Jellyfin's two newest main
-    /// log files (covering a just-rolled-over file), untrimmed. Shared by the Logs tab
-    /// and the "Send logs to developer" bundle; each caller caps as it sees fit. The
+    /// log files (covering a just-rolled-over file), untrimmed, for the Logs tab. The
     /// plugin never logs auth tokens, passwords, cookies, or review text, and every
     /// email address is replaced with [email]. The lines still name films, shows,
     /// Jellyfin users and Letterboxd usernames.
@@ -844,8 +843,7 @@ public class LetterboxdController : JellyfinUserApiController
                 var inLegacyReviewBody = false;
                 while ((line = sr.ReadLine()) != null)
                 {
-                    // Emails are masked here, in the one reader behind the Logs tab, the bundle
-                    // preview and the send, so all three show the same lines.
+                    // Emails are masked here, in the reader behind the Logs tab.
                     line = LogRedaction.RedactEmails(StripAnsi(line));
                     var isHeader = IsLogHeader(line);
                     if (isHeader)
@@ -871,111 +869,6 @@ public class LetterboxdController : JellyfinUserApiController
             _logger.LogWarning("ReadRecentLogLines failed: {Message}", ex.Message);
             return (new List<string>(), null, ex.Message);
         }
-    }
-
-    // The id a bundle carries when telemetry never made one: one per server run, so the
-    // preview shows the same id the send then uploads.
-    private static readonly string OneOffBundleId = Guid.NewGuid().ToString();
-
-    private const int MaxNoteLength = 2000;
-
-    /// <summary>
-    /// Assembles the exact diagnostic bundle JSON for the calling server. Used by both
-    /// the preview and the send so they cannot diverge: what the preview shows is byte
-    /// for byte what the send uploads (note aside, which the user types in either path).
-    /// </summary>
-    private (string Json, int MatchedLines) BuildLogBundleJson(string? note)
-    {
-        // The ingest Worker keeps the first 2000 characters of a note (worker/src/index.ts);
-        // cut it here so the preview shows what is kept, never splitting a surrogate pair.
-        if (string.IsNullOrEmpty(note)) note = null;
-        else if (note.Length > MaxNoteLength)
-            note = note[..(char.IsHighSurrogate(note[MaxNoteLength - 1]) ? MaxNoteLength - 1 : MaxNoteLength)];
-
-        var (allLines, source, error) = ReadRecentLogLines();
-        var matched = allLines.Count;
-        var lines = allLines.Count > 500 ? allLines.GetRange(allLines.Count - 500, 500) : allLines;
-
-        // Collector status travels inside the bundle. Without it an empty capture is
-        // indistinguishable (server-side) from a broken collector: bundle LBX-C1EP38
-        // arrived as log_lines=[] with nothing saying whether the plugin was idle,
-        // the log dir was missing, or the line filter matched nothing.
-        lines.Insert(0, $"[meta] collector: files={source ?? "none"}; matched={matched}; error={error ?? "none"}");
-        var collector = new { files = source ?? "none", matched, error = error ?? "none" };
-
-        int? libraryCount;
-        try
-        {
-            libraryCount = _libraryManager.GetCount(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { BaseItemKind.Movie },
-                Recursive = true
-            });
-        }
-        catch
-        {
-            libraryCount = null;
-        }
-
-        var telemetrySnapshot = TelemetryService.BuildPayload("logs", libraryCount);
-        var instanceId = Plugin.Instance?.Configuration?.Telemetry?.InstanceId;
-        if (string.IsNullOrEmpty(instanceId))
-            instanceId = OneOffBundleId;
-
-        var json = TelemetryService.BuildLogBundleJson(
-            instanceId,
-            Plugin.Instance?.Version?.ToString() ?? "unknown",
-            telemetrySnapshot,
-            note,
-            lines,
-            collector);
-        return (json, matched);
-    }
-
-    /// <summary>
-    /// Returns the EXACT bundle that "Send logs to developer" would upload, without
-    /// sending it, including the note the admin has typed so far. Backs the Logs tab's
-    /// Preview so the user sees the real log lines and telemetry snapshot, not just the
-    /// anonymous part. A POST so the note travels in the body, never in a URL that request
-    /// and proxy logs keep.
-    /// </summary>
-    [HttpPost("Telemetry/PreviewLogs")]
-    [Authorize(Policy = "RequiresElevation")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult PreviewLogs([FromBody] SendLogsRequest? request = null)
-    {
-        return Content(BuildLogBundleJson(request?.Note).Json, "application/json");
-    }
-
-    /// <summary>
-    /// User-initiated "send logs to developer". Uploads the bundle from
-    /// <see cref="BuildLogBundleJson"/> (recent log lines with emails masked, the current
-    /// telemetry snapshot, versions and the admin's note) to the private telemetry backend
-    /// and returns a short reference code the user can quote in a bug report. Admin-only.
-    /// Unlike telemetry this is NOT anonymous (log lines name films, shows, Jellyfin users
-    /// and Letterboxd usernames) and only runs on this explicit, disclosed action. Works
-    /// whether or not telemetry is enabled; if no telemetry instance id exists, the bundle
-    /// carries an id made once per server run, so a preview and the send that follows match.
-    /// </summary>
-    [HttpPost("Telemetry/SendLogs")]
-    [Authorize(Policy = "RequiresElevation")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult> SendLogs([FromBody] SendLogsRequest? request)
-    {
-        var (json, matched) = BuildLogBundleJson(request?.Note);
-        var code = await TelemetryService.PostLogBundleAsync(json).ConfigureAwait(false);
-
-        if (string.IsNullOrEmpty(code))
-            return BadRequest(new { error = "Could not reach the diagnostics endpoint. Check the server's internet connection and try again." });
-
-        // Still a success (the telemetry snapshot alone can be useful), but the user
-        // must know their diagnostics were blank, otherwise they quote the ref code
-        // in a bug report and wait on logs that never arrived.
-        string? warning = matched == 0
-            ? "No LetterboxdSync entries were found in the two newest server log files, so the bundle contains no log lines. Reproduce the problem first (for example, run a sync), then send logs again."
-            : null;
-
-        return Ok(new { refCode = code, warning });
     }
 
     /// <summary>
@@ -1111,12 +1004,6 @@ public class LetterboxdController : JellyfinUserApiController
             _logger.LogWarning("Failed to write Jellyfin rating for TMDb {TmdbId}: {Message}", tmdbId.Value, ex.Message);
         }
     }
-}
-
-public class SendLogsRequest
-{
-    /// <summary>Optional free-text note from the user describing what went wrong.</summary>
-    public string? Note { get; set; }
 }
 
 public class ReviewRequest

@@ -34,9 +34,7 @@ public class ControllerAuthorizationTests
         "LetterboxdController.GetAuthBreakers",
         "LetterboxdController.GetLogs",
         "LetterboxdController.GetTelemetryPreview",
-        "LetterboxdController.PreviewLogs",
         "LetterboxdController.RegenerateTelemetryId",
-        "LetterboxdController.SendLogs",
         "LetterboxdController.TestJellyseerr",
     };
 
