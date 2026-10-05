@@ -51,6 +51,27 @@ public class SerializdShowStatusTests : IDisposable
 
         await service.DidNotReceive().SetCurrentlyWatchingAsync(Arg.Any<int>());
         Assert.False(SerializdSyncHistory.Has(UserId, Email, Show, 0, 0, SerializdSyncHistory.KindCurrentlyWatching));
+        Assert.True(SerializdSyncHistory.Has(UserId, Email, Show, 0, 0, SerializdSyncHistory.KindFinished));
+    }
+
+    [Fact]
+    public void FinishedShow_IsOnlyCheckedOnce()
+    {
+        var checks = 0;
+        bool Finished() { checks++; return true; }
+
+        Assert.False(SerializdShowStatus.IsPending(UserId, Email, Show, Finished));
+        Assert.False(SerializdShowStatus.IsPending(UserId, Email, Show, Finished));
+
+        Assert.Equal(1, checks);
+    }
+
+    [Fact]
+    public void FinishedMarker_IsTrackedPerAccount()
+    {
+        Assert.False(SerializdShowStatus.IsPending(UserId, Email, Show, () => true));
+
+        Assert.True(SerializdShowStatus.IsPending(UserId, "other@example.com", Show, () => false));
     }
 
     [Fact]

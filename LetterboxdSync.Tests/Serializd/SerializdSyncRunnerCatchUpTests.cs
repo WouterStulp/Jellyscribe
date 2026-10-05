@@ -207,6 +207,44 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_FinishedShow_IsCheckedOnceAcrossRuns()
+    {
+        var (user, idHex) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3);
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3, SerializdSyncHistory.KindLog);
+        var checks = 0;
+        SerializdShowStatus.FinishedReader = (_, _) => { checks++; return true; };
+        var service = FakeService(out _);
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        Assert.Equal(1, checks);
+        await service.DidNotReceive().SetCurrentlyWatchingAsync(Arg.Any<int>());
+    }
+
+    [Fact]
+    public async Task Run_NewEpisodeOfAnUnfinishedShow_ChecksFinishedOncePerRun()
+    {
+        var (user, _) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        var checks = 0;
+        SerializdShowStatus.FinishedReader = (_, _) => { checks++; return false; };
+        var service = FakeService(out var logged);
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        Assert.Single(logged);
+        Assert.Equal(1, checks);
+        await service.Received(1).SetCurrentlyWatchingAsync(ShowTmdbId);
+    }
+
+    [Fact]
     public async Task Run_FinishedShow_IsNotMarkedCurrentlyWatching()
     {
         var (user, _) = AddUserWithAccount();
