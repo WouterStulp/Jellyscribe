@@ -93,9 +93,6 @@ public class SerializdSyncRunner
                 {
                     _logger.LogError("Serializd catch-up failed for {Username} as {Email}: {Message}",
                         user.Username, account.Email, ex.Message);
-                    // No SyncEvent is recorded on this early-exit path (e.g. an auth failure
-                    // before SyncOneAsync reaches any episode); hook telemetry directly.
-                    TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
                 }
 
                 processed++;
@@ -141,9 +138,6 @@ public class SerializdSyncRunner
                 {
                     _logger.LogError("Serializd catch-up failed for {Username} as {Email}: {Message}",
                         user.Username, account.Email, ex.Message);
-                    // No SyncEvent is recorded on this early-exit path (e.g. an auth failure
-                    // before SyncOneAsync reaches any episode); hook telemetry directly.
-                    TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
                 }
             }
 
