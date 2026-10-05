@@ -315,7 +315,7 @@
 
                         <!-- INTEGRATIONS -->
                         <section class="ws-view" data-sec="settings">
-                            <div class="ws-head"><div><h1>Integrations</h1><p>Server-wide connections shared by both diaries.</p></div><button type="button" class="ws-btn primary" id="saveIntegrationsBtn">Save</button></div>
+                            <div class="ws-head"><div><h1>Integrations</h1><p>Server-wide connections shared by both diaries.</p></div><div style="display:flex;gap:10px;align-items:center;"><span id="integrationsStatus" style="font-size:12.5px;"></span><button type="button" class="ws-btn primary" id="saveIntegrationsBtn">Save</button></div></div>
                             <div class="ws-panel" style="padding:18px;margin-bottom:14px;">
                                 <div class="ws-sect-title" style="margin-top:0;"><h2>Seerr</h2><span class="rule"></span></div>
                                 <p class="ws-muted" style="font-size:12.5px;margin-top:0;">Auto-request titles missing from the library (films and TV shows).</p>
@@ -470,10 +470,10 @@
                             if (err.json) return err.json().then(function (d) { return (d && d.error) || err.statusText || ('HTTP ' + err.status); }, function () { return err.statusText || ('HTTP ' + err.status); });
                             return Promise.resolve(err.message || String(err));
                         },
-                        saveFailed: function (err) {
+                        saveFailed: function (err, statusId) {
                             var self = this;
                             Promise.resolve(self.errText(err)).then(function (msg) {
-                                document.getElementById('mStatus').innerHTML = '<span class="ws-red">Save failed: ' + self.escAttr(msg) + '</span>';
+                                document.getElementById(statusId || 'mStatus').innerHTML = '<span class="ws-red">Save failed: ' + self.escAttr(msg) + '</span>';
                             });
                         },
 
@@ -1128,13 +1128,25 @@
 
                         /* ===== Integrations & logs ===== */
                         saveIntegrations: function () {
-                            var self = this;
+                            var self = this, prev = [self.config.JellyseerrUrl, self.config.JellyseerrApiKey, self.config.AutoApproveJellyseerrRequests, self.config.NtfyUrl, self.config.NtfyToken];
                             self.config.JellyseerrUrl = document.getElementById('jellyseerrUrl').value.trim() || null;
                             self.config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
                             self.config.AutoApproveJellyseerrRequests = document.getElementById('autoApproveJellyseerr').checked;
                             self.config.NtfyUrl = document.getElementById('ntfyUrl').value.trim() || null;
                             self.config.NtfyToken = document.getElementById('ntfyToken').value.trim() || null;
-                            ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () { Dashboard.processPluginConfigurationUpdateResult(); });
+                            var btn = document.getElementById('saveIntegrationsBtn'), st = document.getElementById('integrationsStatus');
+                            btn.disabled = true;
+                            st.textContent = 'Saving…';
+                            ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {
+                                btn.disabled = false;
+                                st.innerHTML = '<span class="ws-green">Saved</span>';
+                                Dashboard.processPluginConfigurationUpdateResult();
+                            }, function (err) {
+                                self.config.JellyseerrUrl = prev[0]; self.config.JellyseerrApiKey = prev[1]; self.config.AutoApproveJellyseerrRequests = prev[2];
+                                self.config.NtfyUrl = prev[3]; self.config.NtfyToken = prev[4];
+                                btn.disabled = false;
+                                self.saveFailed(err, 'integrationsStatus');
+                            });
                         },
                         testJellyseerr: function () {
                             var url = document.getElementById('jellyseerrUrl').value.trim(), key = document.getElementById('jellyseerrApiKey').value.trim();
