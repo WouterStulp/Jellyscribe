@@ -70,6 +70,7 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
     {
         SerializdServiceFactory.OverrideForTesting = null;
         SerializdSyncRunner.SeriesTmdbIdReader = SerializdSyncRunner.ReadSeriesTmdbId;
+        SerializdShowStatus.FinishedReader = SerializdShowStatus.IsFinished;
         SerializdSyncHistory.DataPathOverride = null;
         SerializdSyncHistory.ResetForTesting();
         SerializdActivity.DataPathOverride = null;
@@ -139,6 +140,41 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
             Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<DateTime>(), Arg.Any<int?>(), Arg.Any<bool>());
         await service.DidNotReceive().LogEpisodesAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<int>>());
         Assert.False(SerializdSyncHistory.Has(idHex, "user@example.com", ShowTmdbId, 1, 3, SerializdSyncHistory.KindLog));
+    }
+
+    [Fact]
+    public async Task Run_NothingNewToLog_StillMarksAnUnfinishedShowCurrentlyWatching()
+    {
+        var (user, idHex) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3);
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3, SerializdSyncHistory.KindLog);
+        var service = FakeService(out var logged);
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        Assert.Empty(logged);
+        await service.Received(1).SetCurrentlyWatchingAsync(ShowTmdbId);
+        Assert.False(SerializdShowStatus.IsPending(idHex, "user@example.com", ShowTmdbId, () => false));
+    }
+
+    [Fact]
+    public async Task Run_FinishedShow_IsNotMarkedCurrentlyWatching()
+    {
+        var (user, _) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdShowStatus.FinishedReader = (_, _) => true;
+        var service = FakeService(out var logged);
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        Assert.Single(logged);
+        await service.DidNotReceive().SetCurrentlyWatchingAsync(Arg.Any<int>());
     }
 
     [Fact]
