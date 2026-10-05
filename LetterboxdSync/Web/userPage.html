@@ -170,8 +170,9 @@
                     #letterboxdUserPage .ws { grid-template-columns: 1fr; min-height: 0; overflow: visible; }
                     #letterboxdUserPage .ws-rail { align-items: stretch; border-right: 0; border-bottom: 1px solid var(--ws-border); height: auto; position: static; padding: 12px 12px 0; }
                     #letterboxdUserPage .ws-rail-inner { gap: 10px; }
-                    #letterboxdUserPage .ws-nav { flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
-                    #letterboxdUserPage .ws-nav::-webkit-scrollbar { display: none; }
+                    #letterboxdUserPage .ws-nav, #letterboxdUserPage .ws-filters { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 4px; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+                    #letterboxdUserPage .ws-nav::-webkit-scrollbar, #letterboxdUserPage .ws-filters::-webkit-scrollbar { display: none; }
+                    #letterboxdUserPage .ws-filters .ws-chip { white-space: nowrap; flex: 0 0 auto; }
                     #letterboxdUserPage .ws-navlabel { display: none; }
                     #letterboxdUserPage .ws-nav a { white-space: nowrap; padding: 8px 13px; flex: 0 0 auto; }
                     #letterboxdUserPage .ws-main { padding: 16px 13px 34px; overflow-x: hidden; }
@@ -188,8 +189,10 @@
                     #letterboxdUserPage .ws-modal-ov.show { padding: 10px 10px 32px; align-items: flex-start; overflow-y: auto; -webkit-overflow-scrolling: touch; }
                     #letterboxdUserPage .ws-modal { padding: 16px; max-width: none; margin: 6px auto; max-height: none; overflow-y: visible; }
                 }
+                #letterboxdUserPage .ws-tc .ws-mwhen { display: none; }
                 @media (max-width: 540px) {
                     #letterboxdUserPage .ws-table th:nth-child(4), #letterboxdUserPage .ws-table td:nth-child(4) { display: none; }
+                    #letterboxdUserPage .ws-tc .ws-mwhen { display: inline; }
                     #letterboxdUserPage .ws-tile .n { font-size: 19px; }
                 }
                 #letterboxdUserPage .ws-spark { display: block; width: 100%; height: 26px; margin-top: 10px; }
@@ -570,7 +573,7 @@
                             var seM = (e._svc === 'serializd') ? (m || '').match(/S(\d+)E(\d+)/) : null;
                             var btn = (canReview && e.TmdbId) ? '<button type="button" class="ws-review-btn" data-svc="' + self.esc(e._svc) + '" data-tmdb="' + self.esc(e.TmdbId) +
                                 '" data-title="' + self.esc(t) + '" data-slug="' + self.esc(e.FilmSlug) + '" data-season="' + (seM ? seM[1] : '') + '" data-episode="' + (seM ? seM[2] : '') + '">Review</button>' : '';
-                            return '<tr' + (trAttrs || '') + '><td><div class="ws-titlecell ws-tc"><span class="ws-badge ' + svc + '">' + (svc === 'tv' ? 'TV' : 'MV') + '</span><div><div class="t">' + self.esc(t) + '</div>' + (m ? '<div class="m">' + self.esc(m) + '</div>' : '') + '</div></div></td><td>' + self.pillHtml(status, e.Error) + '</td><td class="ws-src">' + self.esc(e.Source) + '</td><td class="ws-when">' + self.whenOf(e) + '</td><td>' + btn + '</td></tr>';
+                            return '<tr' + (trAttrs || '') + '><td><div class="ws-titlecell ws-tc"><span class="ws-badge ' + svc + '">' + (svc === 'tv' ? 'TV' : 'MV') + '</span><div><div class="t">' + self.esc(t) + '</div>' + '<div class="m">' + self.esc(m) + '<span class="ws-mwhen">' + (m ? ' · ' : '') + self.whenOf(e) + '</span></div>' + '</div></div></td><td>' + self.pillHtml(status, e.Error) + '</td><td class="ws-src">' + self.esc(e.Source) + '</td><td class="ws-when">' + self.whenOf(e) + '</td><td>' + btn + '</td></tr>';
                         },
                         // Consecutive episodes of one show collapse into one expandable row, so a binge
                         // doesn't push everything else off the page. A run of one stays a plain row.
@@ -599,7 +602,7 @@
                             var statuses = uniq(function (e) { return self.statusOf(e); }), sources = uniq(function (e) { return e.Source || ''; });
                             var pill = statuses.length === 1 ? self.pillHtml(statuses[0]) : '<span class="ws-pill Skipped">Mixed</span>';
                             return '<tr class="ws-grp"><td><button type="button" class="ws-grp-btn ws-tc" data-grp="' + id + '" aria-expanded="false"><span class="ws-badge tv">TV</span><div><div class="t">' + self.esc(u.show) +
-                                ' <span class="ws-grp-caret">▸</span></div><div class="m">' + u.events.length + ' episodes · ' + self.esc(episodeOf(oldest)) + '–' + self.esc(episodeOf(newest)) + '</div></div></button></td><td>' + pill +
+                                ' <span class="ws-grp-caret">▸</span></div><div class="m">' + u.events.length + ' episodes · ' + self.esc(episodeOf(oldest)) + '–' + self.esc(episodeOf(newest)) + '<span class="ws-mwhen"> · ' + self.whenOf(newest) + '</span></div></div></button></td><td>' + pill +
                                 '</td><td class="ws-src">' + (sources.length === 1 ? self.esc(sources[0]) : '') + '</td><td class="ws-when">' + self.whenOf(newest) + '</td><td></td></tr>';
                         },
 
