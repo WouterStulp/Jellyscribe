@@ -64,7 +64,7 @@ Full feature parity with the Letterboxd side: real-time sync, ratings, reviews, 
 1. In Jellyfin, go to **Dashboard > Plugins > Repositories**
 2. Add the Jellyscribe repository:
    - **Name:** `Jellyscribe (WouterStulp fork)`
-   - **URL:** `https://raw.githubusercontent.com/WouterStulp/Jellyscribe/main/fork/manifest.json`
+   - **URL:** `https://github.com/WouterStulp/Jellyscribe/releases/latest/download/manifest.json`
 3. Remove the upstream Jellyscribe repository if you have it (any `lachlanbyoung.workers.dev` or `builtbyproxy` entry). The fork uses the same plugin id, so with both listed Jellyfin picks whichever has the higher version
 4. Go to **Catalog** and install **Jellyscribe**
 5. Restart Jellyfin
@@ -178,7 +178,7 @@ docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:9.0 dotnet b
 
 ## Releasing
 
-Versions are the upstream version plus a fourth number (`2.10.0` → `2.10.0.1`). A PR that ships to users bumps `AssemblyVersion`/`FileVersion` in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj` and fills in its `## Release notes` section. When it's merged, `release.yml` runs `fork/release.sh`, which tests, publishes the GitHub release and adds the version to `fork/manifest.json`. `fork/release.sh "<changelog>"` also works by hand.
+Publish a release on GitHub with a tag of the upstream version plus a fourth number (`v2.10.0.4`) and the user-facing changelog as its text. `.github/workflows/release.yml` then tests and builds that tag with the tag as the plugin version, and attaches the zip and an updated `manifest.json` to the release. Jellyfin reads the plugin repository from the latest release's `manifest.json`, so nothing is committed for a release.
 
 ## Contributing
 

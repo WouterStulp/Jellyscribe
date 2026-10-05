@@ -71,11 +71,13 @@ Treat the key as public. It ships in every `Jellyscribe.dll` and a decompiler sh
 
 This is a standalone fork of builtbyproxy/Jellyscribe; never open PRs against upstream. Versions are the upstream version the fork is based on plus a fourth number (`2.10.0` → `2.10.0.1`).
 
-1. Open a PR against `main` with a Conventional Commits title. If the change ships to users, bump `AssemblyVersion` / `FileVersion` in both `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj`, and fill in the `## Release notes` section of the PR body: one paragraph of user-facing prose, no symbol names. Docs, CI and test-only PRs skip both.
-2. Squash and merge. The squash subject ends in `(#NN)`, which `release.yml` uses to read that PR's `## Release notes`.
-3. `release.yml` runs on every push to `main`. When no tag exists for the current `AssemblyVersion` it runs `fork/release.sh`: tests, publish, GitHub release, a new entry in `fork/manifest.json` (the plugin repository Jellyfin installs from), and a push of that commit. Without a version bump it stops, so non-shipping merges release nothing.
+Every change reaches `main` through a PR (branch protection enforces it); releases commit nothing.
 
-`fork/release.sh "<changelog>"` also runs by hand. It uses a local `dotnet` when there is one and the `mcr.microsoft.com/dotnet/sdk:9.0` container otherwise.
+1. Merge the PRs that should ship.
+2. Publish a GitHub release whose tag is the version (`v2.10.0.4`) and whose text is the changelog: one paragraph of user-facing prose, no symbol names.
+3. `.github/workflows/release.yml` runs on the published release. Its build job (read-only token) tests the tag and publishes it with `-p:AssemblyVersion`/`FileVersion` from the tag. Its publish job takes the previous release's `manifest.json`, adds the new version, and uploads the zip and manifest to the release. Jellyfin's plugin repository URL is `https://github.com/WouterStulp/Jellyscribe/releases/latest/download/manifest.json`.
+
+The version in `Directory.Build.props` / the csproj only matters for local builds; releases take it from the tag.
 
 - **SDK floor policy (issue #63)**: the `Jellyfin.Controller`/`Jellyfin.Model` PackageReference version MUST equal `targetAbi.txt`. Jellyfin assemblies have per-patch AssemblyVersions, so the SDK we compile against is the real minimum Jellyfin a release can load on. Bump it only when a newer API is needed, raising `targetAbi.txt` in the same PR.
 - **Jellyfin 12 cliff (verified 2026-07-06)**: the 12.x SDK packages are net10.0-only and don't restore against this net9.0 project (NU1202). net9.0 builds run fine on Jellyfin 12 servers, but compiling against the 12 SDK forces net10.0, which can't load on 10.11's .NET 9 host, so adopting it is a one-way split of the release stream. `ci.yml`'s non-blocking probe job reports whether the code still builds against 12.
