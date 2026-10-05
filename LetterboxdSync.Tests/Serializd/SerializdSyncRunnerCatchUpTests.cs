@@ -70,6 +70,7 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
     {
         SerializdServiceFactory.OverrideForTesting = null;
         SerializdSyncRunner.SeriesTmdbIdReader = SerializdSyncRunner.ReadSeriesTmdbId;
+        SerializdSeasonFallback.SeasonLengthsReader = SerializdSeasonFallback.ReadSeasonLengths;
         SerializdSyncHistory.DataPathOverride = null;
         SerializdSyncHistory.ResetForTesting();
         SerializdActivity.DataPathOverride = null;
@@ -139,6 +140,25 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
             Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<DateTime>(), Arg.Any<int?>(), Arg.Any<bool>());
         await service.DidNotReceive().LogEpisodesAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<int>>());
         Assert.False(SerializdSyncHistory.Has(idHex, "user@example.com", ShowTmdbId, 1, 3, SerializdSyncHistory.KindLog));
+    }
+
+    [Fact]
+    public async Task Run_EpisodeInASeasonSerializdKeepsAsOne_LoggedAtTheAbsoluteNumber()
+    {
+        var (user, idHex) = AddUserWithAccount();
+        var ep = MakeEpisode(2, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdSeasonFallback.SeasonLengthsReader = _ => new Dictionary<int, int> { [1] = 24, [2] = 24 };
+        var service = FakeService(out var logged);
+        service.ResolveSeasonIdAsync(ShowTmdbId, 2).Returns(Task.FromResult<int?>(null));
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        await service.Received(1).LogEpisodesAsync(ShowTmdbId, 501,
+            Arg.Is<IReadOnlyList<int>>(l => l.Count == 1 && l[0] == 27));
+        Assert.Equal((ShowTmdbId, 501, 27), Assert.Single(logged));
+        Assert.True(SerializdSyncHistory.Has(idHex, "user@example.com", ShowTmdbId, 2, 3, SerializdSyncHistory.KindLog));
     }
 
     [Fact]

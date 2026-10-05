@@ -10,7 +10,7 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
-    version: '2.10.1',
+    version: '2.10.0.1',
     headline: 'Renaming a Jellyfin user no longer empties their Jellyscribe history',
     summary:
       'If you renamed a Jellyfin user, their Jellyscribe dashboard suddenly showed zero films, zero episodes and no recent activity, as if nothing had ever been synced. Nothing was lost: every entry was still there, but each one was filed under the name the user had when it was written, and the dashboard only looked for the new name. The same mix-up quietly weakened the duplicate checks, so a film synced before the rename could be logged to Letterboxd a second time afterwards. History is now tied to the Jellyfin user itself rather than to their name, and existing entries are linked up automatically the first time this version starts. The one case this cannot repair on its own is a user who was already renamed before updating: their older entries stay filed under the old name.',
@@ -21,6 +21,17 @@ export const releaseNotes: ReleaseNotes[] = [
       ],
       improvements: [
         'Existing history is linked to its Jellyfin user automatically on first start, so a rename made after updating is handled too.',
+      ],
+    },
+  },
+  {
+    version: '2.10.0.1',
+    headline: 'Later anime seasons log to Serializd instead of being skipped',
+    summary:
+      'Many anime are split into several seasons in Jellyfin but listed on Serializd as one long season. The Apothecary Diaries is a good example: Jellyfin shows a season 1 and a season 2, while Serializd, which follows TMDb, has one long season covering both. Watching season 2 in Jellyfin produced nothing on Serializd, because Jellyscribe asked for a season 2 that Serializd does not have and skipped the episode. Jellyscribe now recognises that shape and logs the episode to season 1 at its running number, so season 2 episode 1 lands on Serializd as episode 25. It only does this for shows Serializd keeps as a single season, and only when it knows exactly how many episodes the earlier seasons have, so a show Serializd simply has not added a new season for yet is still skipped rather than logged to the wrong episode.',
+    highlights: {
+      fixes: [
+        'Episodes from later seasons of shows Serializd lists as a single season (common for anime) are logged to Serializd instead of being skipped.',
       ],
     },
   },
