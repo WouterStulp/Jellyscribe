@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Every merge to `main` ships a release, so only the **latest release** receives security fixes. If you are on an older version, update through the Jellyfin plugin catalog before reporting.
+Only the **latest release** of this fork receives security fixes. If you are on an older version, update through the Jellyfin plugin catalog before reporting.
 
 | Version | Supported |
 | ------- | --------- |
@@ -13,16 +13,15 @@ Every merge to `main` ships a release, so only the **latest release** receives s
 
 Please **do not open a public issue** for security problems.
 
-Report privately via [GitHub's private vulnerability reporting](https://github.com/builtbyproxy/Jellyscribe/security/advisories/new) (Security tab → "Report a vulnerability").
+Report privately via [GitHub's private vulnerability reporting](https://github.com/WouterStulp/Jellyscribe/security/advisories/new) (Security tab → "Report a vulnerability").
 
-You can expect an acknowledgement within a few days. Because the release pipeline ships on every merge, confirmed fixes typically go out quickly.
+You can expect an acknowledgement within a few days.
 
 ## Scope
 
 In scope:
 
 - The plugin itself (`Jellyscribe.dll`), including anything that could expose Letterboxd credentials, raw cookies, or other users' data on a shared Jellyfin server
-- The telemetry/manifest worker (`worker/`), including the anonymous telemetry pipeline, log-bundle uploads, and the manifest/download mirror
 - The plugin's REST endpoints (e.g. privilege escalation between Jellyfin users, non-admins reaching admin-only data)
 
 Out of scope:
@@ -55,12 +54,10 @@ The plugin signs every API request with the key, including sign-ins, token refre
 - The Jellyfin log shows `Official API auth failed ... falling back to scraping` for every account at about the same time, usually followed by `Using web scraping fallback`.
 - **Verify login** in the account settings reports that the website login was used, along with the API error.
 - Users whose website login is blocked by Cloudflare see 403 errors, then accounts paused after 3 failures. Several users may report this at once.
-- The weekly "Live checks" workflow fails on `ApiClient_ValidCredentials_AuthenticatesWithTheBundledKey` and opens (or comments on) the `live-check-failure` issue. Release runs fail the same test in their `live-check` job.
 
 ### Runbook
 
-1. **Confirm it is the key.** Run "Live checks (weekly)" from the Actions tab. The key is the likely cause when `ApiClient_ValidCredentials_AuthenticatesWithTheBundledKey` fails on `/auth/token` while the test account still signs in on letterboxd.com.
-2. **Unblock releases if needed.** The release workflow will not publish while the live tests fail. To ship something unrelated in the meantime, set the repository variable `RELEASE_LIVE_CHECK` to `off` (Settings, Secrets and variables, Actions, Variables), and delete it once the key is replaced.
-3. **Tell users how to keep syncing.** Pin an issue explaining that the API path is down and that pasting Raw Cookies and a matching User-Agent (README, "Cloudflare issues") keeps the website fallback working.
-4. **Get a replacement key and secret,** for example by applying to Letterboxd for API access.
-5. **Ship it in a patch release.** Replace both constants in `LetterboxdApiConstants.cs`, then run the live tests locally against the test account (`dotnet test -c Release --filter Category=Integration`, setup in `LetterboxdSync.Tests/Integration/README.md`). Open a `fix:` PR with a patch version bump and release notes that tell users to update. When it merges, the release workflow runs the live tests against the new key before publishing. Users only need to update the plugin and restart Jellyfin; no settings change.
+1. **Confirm it is the key.** Run the live tests locally against a test account (`dotnet test -c Release --filter Category=Integration`, setup in `LetterboxdSync.Tests/Integration/README.md`). The key is the likely cause when `ApiClient_ValidCredentials_AuthenticatesWithTheBundledKey` fails on `/auth/token` while the test account still signs in on letterboxd.com.
+2. **Tell users how to keep syncing.** Pin an issue explaining that the API path is down and that pasting Raw Cookies and a matching User-Agent (README, "Cloudflare issues") keeps the website fallback working.
+3. **Get a replacement key and secret,** for example by applying to Letterboxd for API access.
+4. **Ship it in a patch release.** Replace both constants in `LetterboxdApiConstants.cs`, run the live tests again, and publish a release. Users only need to update the plugin and restart Jellyfin; no settings change.
