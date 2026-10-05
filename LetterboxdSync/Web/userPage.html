@@ -79,7 +79,7 @@
                 #letterboxdUserPage .ws-chip.on[data-f="serializd"] { border-color: var(--ws-tv); background: var(--ws-tv-soft); box-shadow: inset 0 0 0 1px var(--ws-tv); }
                 #letterboxdUserPage .ws-chip.on[data-s="Success"] { border-color: var(--ws-ok); background: rgba(53,194,129,.14); box-shadow: inset 0 0 0 1px var(--ws-ok); }
                 #letterboxdUserPage .ws-chip.on[data-s="Rewatch"] { border-color: var(--ws-info); background: rgba(71,180,242,.14); box-shadow: inset 0 0 0 1px var(--ws-info); }
-                #letterboxdUserPage .ws-chip.on[data-s="Reviewed"] { border-color: var(--ws-warn); background: rgba(245,166,35,.14); box-shadow: inset 0 0 0 1px var(--ws-warn); }
+                #letterboxdUserPage .ws-chip.on[data-s="Reviewed"], #letterboxdUserPage .ws-chip.on[data-s="Rated"] { border-color: var(--ws-warn); background: rgba(245,166,35,.14); box-shadow: inset 0 0 0 1px var(--ws-warn); }
                 #letterboxdUserPage .ws-chip.on[data-s="Skipped"] { border-color: var(--ws-faint); background: var(--ws-raise); box-shadow: inset 0 0 0 1px var(--ws-faint); }
                 #letterboxdUserPage .ws-chip.on[data-s="Failed"] { border-color: var(--ws-crit); background: rgba(242,88,94,.14); box-shadow: inset 0 0 0 1px var(--ws-crit); }
                 #letterboxdUserPage .ws-chip.on[data-s="Requested"] { border-color: var(--ws-requested); background: rgba(167,139,250,.14); box-shadow: inset 0 0 0 1px var(--ws-requested); }
@@ -109,7 +109,7 @@
                 #letterboxdUserPage .ws-pill { font-family: var(--ws-mono); font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; display: inline-flex; }
                 #letterboxdUserPage .ws-pill.Success { color: var(--ws-ok); background: rgba(53,194,129,.13); }
                 #letterboxdUserPage .ws-pill.Rewatch { color: var(--ws-info); background: rgba(71,180,242,.14); }
-                #letterboxdUserPage .ws-pill.Reviewed { color: var(--ws-warn); background: rgba(245,166,35,.14); }
+                #letterboxdUserPage .ws-pill.Reviewed, #letterboxdUserPage .ws-pill.Rated { color: var(--ws-warn); background: rgba(245,166,35,.14); }
                 #letterboxdUserPage .ws-pill.has-reason { cursor: help; gap: 5px; }
                 #letterboxdUserPage .ws-info-i { display: inline-grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; border: 1px solid currentColor; font-size: 9px; font-style: italic; line-height: 1; opacity: .8; }
                 #letterboxdUserPage .ws-pill.Skipped { color: var(--ws-muted); background: var(--ws-surface-2); }
@@ -253,6 +253,7 @@
                                 <button type="button" class="ws-chip" data-s="Skipped">Skipped</button>
                                 <button type="button" class="ws-chip" data-s="Failed">Failed</button>
                                 <button type="button" class="ws-chip" data-s="Requested">Requested</button>
+                                <button type="button" class="ws-chip" data-s="Rated">Rated</button>
                             </div>
                             <div class="ws-panel" style="overflow-x:auto;"><table class="ws-table"><thead><tr><th>Title</th><th>Status</th><th>Source</th><th>When</th><th></th></tr></thead><tbody id="historyBody"><tr><td colspan="5" style="padding:2em;text-align:center;" class="ws-muted">Loading…</td></tr></tbody></table></div>
                             <div id="historyPagination" style="display:none;margin-top:12px;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;"><button type="button" class="ws-btn" id="historyPrev">‹ Prev</button><span id="historyPageInfo" class="ws-muted ws-mono" style="margin:0 8px;"></span><button type="button" class="ws-btn" id="historyNext">Next ›</button></div>
@@ -420,7 +421,8 @@
                                 var buckets = new Array(days).fill(0);
                                 self.merged.forEach(function (e) {
                                     var idx = days - 1 - Math.floor((now - new Date(e.Timestamp).getTime()) / dayMs);
-                                    if (e._svc === svc && idx >= 0 && idx < days) buckets[idx]++;
+                                    // Rating pushes (status 5) aren't logged watches; keep them off the trend line.
+                                    if (e._svc === svc && e.Status !== 5 && e.Status !== 'Rated' && idx >= 0 && idx < days) buckets[idx]++;
                                 });
                                 var max = Math.max.apply(null, buckets.concat([1])), w = 120, h = 26, step = w / (days - 1);
                                 var pts = buckets.map(function (v, i) { return [Math.round(i * step), Math.round(h - 2 - (v / max) * (h - 5))]; });
@@ -434,7 +436,7 @@
                         },
                         statusOf: function (e) {
                             if (e.Source === 'review') return 'Reviewed';
-                            return typeof e.Status === 'string' ? e.Status : (['Success', 'Skipped', 'Failed', 'Rewatch', 'Requested'][e.Status] || 'Success');
+                            return typeof e.Status === 'string' ? e.Status : (['Success', 'Skipped', 'Failed', 'Rewatch', 'Requested', 'Rated'][e.Status] || 'Success');
                         },
                         matchesStatus: function (e) {
                             var s = this.ovStatus || 'all';
@@ -452,7 +454,7 @@
                             var start = (this.ovPage || 0) * ps;
                             document.getElementById('historyBody').innerHTML = all.slice(start, start + ps).map(function (e) {
                                 var svc = e._svc === 'serializd' ? 'tv' : 'film';
-                                var status = typeof e.Status === 'string' ? e.Status : ['Success', 'Skipped', 'Failed', 'Rewatch', 'Requested'][e.Status] || 'Success';
+                                var status = typeof e.Status === 'string' ? e.Status : ['Success', 'Skipped', 'Failed', 'Rewatch', 'Requested', 'Rated'][e.Status] || 'Success';
                                 var title = (e.FilmTitle || '').split(' · '), t = title[0], m = title[1] || '';
                                 var ts = new Date(e.Timestamp), when = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                                 var canReview = status === 'Success' || status === 'Rewatch' || status === 'Skipped';
@@ -567,8 +569,11 @@
                         checksFor: function (svc, a) {
                             a = a || {};
                             var rows = [['Enabled', 'chkEnabled', a.enabled !== false, 'Master switch for this account.'],
-                                ['Mark favourites as liked', 'chkFav', !!a.syncFavorites, 'Favourite in Jellyfin → hearted on the diary.'],
-                                ['Only sync recently played', 'chkDate', !!a.enableDateFilter, 'Limit the catch-up to the last N days.'],
+                                ['Mark favourites as liked', 'chkFav', !!a.syncFavorites, 'Favourite in Jellyfin → hearted on the diary.']]
+                                // Always rendered; onSvcChange shows it only for Letterboxd, so switching the
+                                // service on a new account reveals it without re-rendering the other boxes.
+                                .concat([['Sync ratings to Letterboxd', 'chkRatings', a.syncRatings !== false, 'Rate in Jellyfin after watching → your Letterboxd film rating.']])
+                                .concat([['Only sync recently played', 'chkDate', !!a.enableDateFilter, 'Limit the catch-up to the last N days.'],
                                 ['Primary account', 'chkPrimary', !!a.isPrimary, 'Wins on tie-breaks when you have several.'],
                                 ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.syncWatchlist : !!a.enableWatchlistSync, 'Watchlist → Jellyfin ' + (svc === 'serializd' ? 'collection + playlist.' : 'playlist.')],
                                 ['Auto-request via Seerr', 'chkSeerr', !!a.autoRequestWatchlist, 'Missing from the library → request via Seerr.'],
@@ -576,11 +581,11 @@
                                 ['Mirror watchlist to Seerr', 'chkMirror', !!a.mirrorJellyseerrWatchlist, 'Push this watchlist into your Seerr watchlist (primary account only).'],
                                 ['Skip already-synced', 'chkSkip', a.skipPreviouslySynced !== false, 'Avoid re-logging via local history.'],
                                 ['Stop on first failure', 'chkStop', !!a.stopOnFailure, 'Halt on the first error.'],
-                                ['Import diary as watched', 'chkImport', !!a.enableDiaryImport, 'Mark Jellyfin played from the diary.']];
+                                ['Import diary as watched', 'chkImport', !!a.enableDiaryImport, 'Mark Jellyfin played from the diary.']]);
                             return rows.map(function (r) { return '<label><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>'; }).join('') +
                                 '<div class="ws-row" id="dateDaysRow" style="display:' + (a.enableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.dateFilterDays || 7) + '" /></div>';
                         },
-                        onSvcChange: function () { var svc = document.getElementById('mSvc').value; document.getElementById('mUserLabel').textContent = svc === 'serializd' ? 'Email or username' : 'Letterboxd username'; document.getElementById('mAuthBlobRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; document.getElementById('mUserAgentRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; var uname = document.getElementById('mUsername').value.trim(); document.getElementById('mWatchName').placeholder = svc === 'serializd' ? 'Serializd Watchlist' : ('Letterboxd Watchlist' + (uname ? ' (' + uname + ')' : '')); },
+                        onSvcChange: function () { var svc = document.getElementById('mSvc').value; document.getElementById('mUserLabel').textContent = svc === 'serializd' ? 'Email or username' : 'Letterboxd username'; document.getElementById('mAuthBlobRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; document.getElementById('mUserAgentRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; var ratingsBox = document.getElementById('chkRatings'); if (ratingsBox) ratingsBox.closest('label').style.display = svc === 'letterboxd' ? '' : 'none'; var uname = document.getElementById('mUsername').value.trim(); document.getElementById('mWatchName').placeholder = svc === 'serializd' ? 'Serializd Watchlist' : ('Letterboxd Watchlist' + (uname ? ' (' + uname + ')' : '')); },
                         openAccount: function (ref) {
                             var self = this, svc = ref ? ref.svc : 'serializd', a = null;
                             if (ref) a = (svc === 'serializd' ? self.sz : self.lb)[ref.i];
@@ -605,7 +610,7 @@
                             var g = function (id) { return document.getElementById(id); };
                             return { svc: g('mSvc').value, username: g('mUsername').value.trim(), password: g('mPassword').value, cookies: g('mAuthBlob').value,
                                 userAgent: g('mUserAgent').value.trim(), watchName: g('mWatchName').value.trim(),
-                                enabled: g('chkEnabled').checked, fav: g('chkFav').checked, date: g('chkDate').checked, days: parseInt(g('chkDateDays').value, 10) || 7,
+                                enabled: g('chkEnabled').checked, fav: g('chkFav').checked, ratings: g('chkRatings') ? g('chkRatings').checked : true, date: g('chkDate').checked, days: parseInt(g('chkDateDays').value, 10) || 7,
                                 primary: g('chkPrimary').checked, watch: g('chkWatch').checked, seerr: g('chkSeerr').checked,
                                 backfill: g('chkBackfill').checked, mirror: g('chkMirror').checked, skip: g('chkSkip').checked, stop: g('chkStop').checked, imp: g('chkImport').checked,
                                 libs: Array.prototype.map.call(document.querySelectorAll('#mLibs .mLibChk:checked'), function (x) { return x.getAttribute('data-id'); }) };
@@ -621,7 +626,7 @@
                                 if (self.editing) self.sz[self.editing.i] = item; else self.sz.push(item);
                                 self.put('Jellyfin.Plugin.LetterboxdSync/Serializd/Accounts', { accounts: self.sz }).then(function (r) { self.afterSave(r); });
                             } else {
-                                var itemL = { letterboxdUsername: m.username, letterboxdPassword: m.password, rawCookies: m.cookies || null, userAgent: m.userAgent || null, enabled: m.enabled, syncFavorites: m.fav, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, enableWatchlistSync: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, playlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
+                                var itemL = { letterboxdUsername: m.username, letterboxdPassword: m.password, rawCookies: m.cookies || null, userAgent: m.userAgent || null, enabled: m.enabled, syncFavorites: m.fav, syncRatings: m.ratings, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, enableWatchlistSync: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, playlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
                                 if (self.editing) self.lb[self.editing.i] = itemL; else self.lb.push(itemL);
                                 self.put('Jellyfin.Plugin.LetterboxdSync/Accounts', { accounts: self.lb }).then(function (r) { self.afterSave(r); });
                             }

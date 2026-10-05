@@ -85,18 +85,128 @@ public class RatingEndpointProbeTests
         }
         finally
         {
-            // Restore: rating off first (it forces watched), then watched, watchlist, liked, rating.
-            await PatchAsync(http, lid, token, "{\"rating\":null}", "restore: clear rating");
-            await PatchAsync(http, lid, token, $"{{\"watched\":{Bool(original.Watched)}}}", "restore: watched");
-            await PatchAsync(http, lid, token, $"{{\"inWatchlist\":{Bool(original.InWatchlist)}}}", "restore: watchlist");
-            await PatchAsync(http, lid, token, $"{{\"liked\":{Bool(original.Liked)}}}", "restore: liked");
-            if (original.Rating.HasValue)
-                await PatchAsync(http, lid, token,
-                    $"{{\"rating\":{original.Rating.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}", "restore: rating");
+            await RestoreAsync(http, lid, token, original);
         }
 
         var restored = await GetRelationshipAsync(http, lid, token, "restored");
         Assert.Equal(original, restored);
+    }
+
+    /// <summary>
+    /// The shipped <see cref="LetterboxdApiClient.SetFilmRatingAsync"/> against the live API,
+    /// including a whole-star value (System.Text.Json writes 4.0 as 4).
+    /// </summary>
+    [SkippableFact]
+    public async Task ApiClient_SetFilmRating_LandsOnTheFilmRelationship()
+    {
+        var user = Environment.GetEnvironmentVariable("LETTERBOXD_TEST_USERNAME");
+        var pass = Environment.GetEnvironmentVariable("LETTERBOXD_TEST_PASSWORD");
+        Skip.If(string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(pass),
+            "Skipping live probe: set LETTERBOXD_TEST_USERNAME and LETTERBOXD_TEST_PASSWORD to run.");
+
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("LetterboxdSync/1.6");
+        var tokenBody = $"grant_type=password&username={Uri.EscapeDataString(user!)}&password={Uri.EscapeDataString(pass!)}";
+        var (tokenStatus, tokenJson) = await SendAsync(http, HttpMethod.Post, "/auth/token", null, tokenBody, "application/x-www-form-urlencoded", null);
+        Skip.If(tokenStatus != 200, $"Skipping live probe: API auth returned HTTP {tokenStatus}.");
+        var token = JsonDocument.Parse(tokenJson).RootElement.GetProperty("access_token").GetString()!;
+
+        using var client = new LetterboxdApiClient(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        await client.AuthenticateAsync(user!, pass!);
+        var film = await client.LookupFilmByTmdbIdAsync(TmdbGodfather);
+        var original = await GetRelationshipAsync(http, film.FilmId, token, "original (client)");
+
+        try
+        {
+            await client.SetFilmRatingAsync(film.Slug, film.FilmId, 4.0);
+            Assert.Equal(4.0, (await GetRelationshipAsync(http, film.FilmId, token, "after client 4.0")).Rating);
+
+            await client.SetFilmRatingAsync(film.Slug, film.FilmId, 0.5);
+            var after = await GetRelationshipAsync(http, film.FilmId, token, "after client 0.5");
+            Assert.Equal(0.5, after.Rating);
+            Assert.Equal(original.DiaryEntries, after.DiaryEntries);
+
+            // An off-scale value must surface as an exception, not a silent success.
+            var ex = await Assert.ThrowsAsync<Exception>(() => client.SetFilmRatingAsync(film.Slug, film.FilmId, 3.3));
+            Finding($"client off-scale rating -> {ex.Message}");
+        }
+        finally
+        {
+            await RestoreAsync(http, film.FilmId, token, original);
+        }
+
+        Assert.Equal(original, await GetRelationshipAsync(http, film.FilmId, token, "restored (client)"));
+    }
+
+    /// <summary>
+    /// Task 1.2 of the stream-ratings change: the shipped scraping-path SetFilmRatingAsync
+    /// (site rate action) against letterboxd.com, read back and restored through the official
+    /// API. CI cannot pass Cloudflare on the scraping sign-in, so this skips there; run it locally
+    /// with LETTERBOXD_TEST_RAW_COOKIES and a matching LETTERBOXD_TEST_USER_AGENT.
+    /// </summary>
+    [SkippableFact]
+    public async Task Scraping_SetFilmRating_LandsOnTheFilmRelationship()
+    {
+        var user = Environment.GetEnvironmentVariable("LETTERBOXD_TEST_USERNAME");
+        var pass = Environment.GetEnvironmentVariable("LETTERBOXD_TEST_PASSWORD");
+        Skip.If(string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(pass),
+            "Skipping live probe: set LETTERBOXD_TEST_USERNAME and LETTERBOXD_TEST_PASSWORD to run.");
+
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("LetterboxdSync/1.6");
+        var tokenBody = $"grant_type=password&username={Uri.EscapeDataString(user!)}&password={Uri.EscapeDataString(pass!)}";
+        var (tokenStatus, tokenJson) = await SendAsync(http, HttpMethod.Post, "/auth/token", null, tokenBody, "application/x-www-form-urlencoded", null);
+        Skip.If(tokenStatus != 200, $"Skipping live probe: API auth returned HTTP {tokenStatus}.");
+        var token = JsonDocument.Parse(tokenJson).RootElement.GetProperty("access_token").GetString()!;
+        var (_, filmJson) = await SendAsync(http, HttpMethod.Get, "/films", $"filmId=tmdb%3A{TmdbGodfather}&perPage=1", null, null, token);
+        var lid = JsonDocument.Parse(filmJson).RootElement.GetProperty("items")[0].GetProperty("id").GetString()!;
+
+        using var scraping = new ScrapingLetterboxdService(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+            Environment.GetEnvironmentVariable("LETTERBOXD_TEST_USER_AGENT"));
+        try
+        {
+            await scraping.AuthenticateAsync(user!, pass!, Environment.GetEnvironmentVariable("LETTERBOXD_TEST_RAW_COOKIES"));
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Skipping scraping probe: scraper auth failed ({ex.Message}).");
+        }
+
+        var film = await scraping.LookupFilmByTmdbIdAsync(TmdbGodfather);
+        Finding($"scraping lookup: slug {film.Slug}, numeric film id {film.FilmId}");
+        var original = await GetRelationshipAsync(http, lid, token, "original (scraping)");
+
+        try
+        {
+            await scraping.SetFilmRatingAsync(film.Slug, film.FilmId, 3.5);
+            Assert.Equal(3.5, (await GetRelationshipAsync(http, lid, token, "after scraping 3.5")).Rating);
+
+            await scraping.SetFilmRatingAsync(film.Slug, film.FilmId, 5.0);
+            var after = await GetRelationshipAsync(http, lid, token, "after scraping 5.0");
+            Assert.Equal(5.0, after.Rating);
+            Assert.Equal(original.DiaryEntries, after.DiaryEntries);
+        }
+        finally
+        {
+            await RestoreAsync(http, lid, token, original);
+        }
+
+        Assert.Equal(original, await GetRelationshipAsync(http, lid, token, "restored (scraping)"));
+    }
+
+    // Rating off first (it forces watched), then watched, watchlist, liked, rating.
+    private async Task RestoreAsync(HttpClient http, string lid, string token, Relationship original)
+    {
+        await PatchAsync(http, lid, token, "{\"rating\":null}", "restore: clear rating");
+        await PatchAsync(http, lid, token, $"{{\"watched\":{Bool(original.Watched)}}}", "restore: watched");
+        await PatchAsync(http, lid, token, $"{{\"inWatchlist\":{Bool(original.InWatchlist)}}}", "restore: watchlist");
+        await PatchAsync(http, lid, token, $"{{\"liked\":{Bool(original.Liked)}}}", "restore: liked");
+        if (original.Rating.HasValue)
+            await PatchAsync(http, lid, token,
+                $"{{\"rating\":{original.Rating.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}", "restore: rating");
     }
 
     private async Task PatchAsync(HttpClient http, string lid, string token, string body, string label)
