@@ -26,17 +26,6 @@ public class ServiceRegistratorTests
     }
 
     [Fact]
-    public void RegisterServices_AddsRepositoryMigrationAsHostedService()
-    {
-        var services = new ServiceCollection();
-        var registrator = new ServiceRegistrator();
-
-        registrator.RegisterServices(services, null!);
-
-        Assert.Single(services, d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) && d.ImplementationType == typeof(RepositoryMigrationService));
-    }
-
-    [Fact]
     public void RegisterServices_AddsUserIdentityAsHostedService()
     {
         var services = new ServiceCollection();

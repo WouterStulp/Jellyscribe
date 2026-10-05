@@ -78,11 +78,4 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </para>
     /// </summary>
     public bool AutoApproveJellyseerrRequests { get; set; } = true;
-
-    /// <summary>
-    /// One-shot guard for the catalog migration that adds the proxied (edge-cached)
-    /// plugin repository entry alongside the GitHub one (v1.19.0). Set after the
-    /// first attempt so a user who deletes the added entry is never overridden.
-    /// </summary>
-    public bool CatalogMigrationDone { get; set; }
 }
