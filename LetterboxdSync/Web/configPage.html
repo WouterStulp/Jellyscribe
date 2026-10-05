@@ -497,23 +497,28 @@
 
                         checksFor: function (svc, a) {
                             a = a || {};
-                            var rows = [
+                            var noSeerr = !(this.config && this.config.JellyseerrUrl);
+                            var sync = [
                                 ['Enabled', 'chkEnabled', a.Enabled !== false, 'Master switch. When off, nothing syncs for this account.'],
-                                ['Mark favourites as liked', 'chkFav', !!a.SyncFavorites, 'Favourite in Jellyfin → hearted on the diary.']
-                            // Always rendered; onSvcChange shows it only for Letterboxd, so switching the
-                            // service on a new account reveals it without re-rendering the other boxes.
-                            ].concat([['Sync ratings to Letterboxd', 'chkRatings', a.SyncRatings !== false, 'Rate in Jellyfin after watching → the Letterboxd film rating.']]).concat([
-                                ['Only sync recently played', 'chkDate', !!a.EnableDateFilter, 'Limit the catch-up to the last N days.'],
+                                ['Mark favourites as liked', 'chkFav', !!a.SyncFavorites, 'Favourite in Jellyfin → hearted on the diary.'],
+                                // Always rendered; onSvcChange shows it only for Letterboxd, so switching the
+                                // service on a new account reveals it without re-rendering the other boxes.
+                                ['Sync ratings to Letterboxd', 'chkRatings', a.SyncRatings !== false, 'Rate in Jellyfin after watching → the Letterboxd film rating.'],
+                                ['Import diary as watched', 'chkImport', !!a.EnableDiaryImport, 'Reverse: mark Jellyfin played from the diary.'],
                                 ['Primary account', 'chkPrimary', !!a.IsPrimary, 'Wins on tie-breaks when a user has several.'],
+                                ['Only sync recently played', 'chkDate', !!a.EnableDateFilter, 'Limit the catch-up to the last N days.']
+                            ];
+                            var watch = [
                                 ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.SyncWatchlist : !!a.EnableWatchlistSync, this.watchDesc(svc)],
-                                ['Auto-request via Seerr', 'chkSeerr', !!a.AutoRequestWatchlist, 'Watchlisted but missing from the library → request via Seerr.'],
-                                ['Backfill Seerr requests', 'chkBackfill', !!a.BackfillAvailableRequests, 'Also attribute a Seerr request for already-available titles (requester trail).'],
-                                ['Mirror watchlist to Seerr', 'chkMirror', !!a.MirrorJellyseerrWatchlist, 'Push this watchlist into the Seerr user\'s own watchlist (primary account only).'],
+                                ['Auto-request via Seerr', 'chkSeerr', !!a.AutoRequestWatchlist, 'Watchlisted but missing from the library → request via Seerr.', noSeerr],
+                                ['Mirror watchlist to Seerr', 'chkMirror', !!a.MirrorJellyseerrWatchlist, 'Push this watchlist into the Seerr user\'s own watchlist (primary account only).', noSeerr]
+                            ];
+                            var advanced = [
                                 ['Skip already-synced', 'chkSkip', a.SkipPreviouslySynced !== false, 'Use local history to avoid re-logging.'],
                                 ['Stop on first failure', 'chkStop', !!a.StopOnFailure, 'Halt this account on the first error.'],
-                                ['Import diary as watched', 'chkImport', !!a.EnableDiaryImport, 'Reverse: mark Jellyfin played from the diary.']
-                            ]);
-                            return this.checksHtml(rows, a.EnableDateFilter, a.DateFilterDays);
+                                ['Backfill Seerr requests', 'chkBackfill', !!a.BackfillAvailableRequests, 'Also attribute a Seerr request for already-available titles (requester trail).', noSeerr]
+                            ];
+                            return this.checksHtml({ sync: sync, watch: watch, advanced: advanced, watchLabel: noSeerr ? 'Watchlist' : null }, a.EnableDateFilter, a.DateFilterDays);
                         },
                         libsFor: function (a) { return this.libsHtml((a && a.ExcludedLibraryIds) || []); },
                         // The one toggle whose wording depends on the service; onSvcChange keeps it in step.

@@ -455,11 +455,17 @@
             /* ===== Account dialog ===== */
             feat: function (label, on) { return '<span class="ws-feat ' + (on ? 'on' : '') + '">' + label + '</span>'; },
             // rows: [label, checkbox id, checked, description]. The days box under "Only sync recently played" follows them.
-            checksHtml: function (rows, dateOn, days) {
-                return rows.map(function (r) {
-                    return '<label><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>';
-                }).join('') +
-                    '<div class="ws-row" id="dateDaysRow" style="display:' + (dateOn ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field" for="chkDateDays">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (days || 7) + '" /></div>';
+            // A row's fifth entry hides it while keeping it in the form, so saving keeps its value.
+            checksHtml: function (groups, dateOn, days) {
+                var html = function (rows) {
+                    return rows.map(function (r) {
+                        return '<label' + (r[4] ? ' style="display:none;"' : '') + '><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>';
+                    }).join('');
+                };
+                return '<div class="ws-label">Sync</div>' + html(groups.sync) +
+                    '<div class="ws-row" id="dateDaysRow" style="display:' + (dateOn ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field" for="chkDateDays">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (days || 7) + '" /></div>' +
+                    '<div class="ws-label">' + (groups.watchLabel || 'Watchlist &amp; Seerr') + '</div>' + html(groups.watch) +
+                    '<details class="ws-adv"><summary class="ws-label">Advanced</summary><div class="ws-checks">' + html(groups.advanced) + '</div></details>';
             },
             // Stored ids for libraries this page listed are replaced by what is ticked; ids for libraries
             // it did not list (one this user cannot see, or a failed or partial list) are kept, so an

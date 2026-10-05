@@ -144,6 +144,10 @@
 #letterboxdSyncConfigPage .ws-checks label, #letterboxdUserPage .ws-checks label { display: flex; gap: 9px; align-items: flex-start; cursor: pointer; font-size: 13px; }
 #letterboxdSyncConfigPage .ws-checks input, #letterboxdUserPage .ws-checks input { margin-top: 2px; }
 #letterboxdSyncConfigPage .ws-checks .desc, #letterboxdUserPage .ws-checks .desc { display: block; color: var(--ws-faint); font-size: 11.5px; }
+#letterboxdSyncConfigPage .ws-checks > .ws-label, #letterboxdUserPage .ws-checks > .ws-label { margin-top: 8px; }
+#letterboxdSyncConfigPage .ws-checks > .ws-label:first-child, #letterboxdUserPage .ws-checks > .ws-label:first-child { margin-top: 0; }
+#letterboxdSyncConfigPage .ws-adv, #letterboxdUserPage .ws-adv { margin-top: 8px; }
+#letterboxdSyncConfigPage .ws-adv summary, #letterboxdUserPage .ws-adv summary { cursor: pointer; margin-bottom: 9px; }
 #letterboxdSyncConfigPage .ws-modal-ov, #letterboxdUserPage .ws-modal-ov { display: none; position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; padding: 20px; box-sizing: border-box; color: var(--ws-text); background: rgba(0,0,0,.55); z-index: 1000; }
 #letterboxdSyncConfigPage .ws-modal-ov::backdrop, #letterboxdUserPage .ws-modal-ov::backdrop { background: transparent; }
 #letterboxdSyncConfigPage .ws-modal-ov[open], #letterboxdUserPage .ws-modal-ov[open] { display: grid; place-items: center; }
