@@ -1,16 +1,8 @@
 name: Release
 
-# Fires on every push to main. If Directory.Build.props's AssemblyVersion
-# already has a matching git tag, the workflow exits cleanly (idempotent, so
-# our own auto-commit re-triggering this workflow is a harmless no-op). If
-# there's no tag, it builds, tests, packages, creates the GitHub Release,
-# inserts the manifest entry (using targetAbi.txt for the floor), and pushes
-# the auto-commit + tag together.
-#
-# Version bumps happen in regular PRs (gated by version-gate.yml). This
-# workflow doesn't decide the version; it just ships whatever the project
-# files say. That keeps the dev experience simple: bump version in your PR,
-# write a Conventional-Commits title, merge, done.
+# Every push to main: when no tag exists for the current AssemblyVersion, run fork/release.sh with
+# the merged PR's "## Release notes" section as the changelog. Merges without a version bump stop
+# at the tag check, and so does the manifest commit release.sh pushes.
 
 on:
   push:
@@ -18,6 +10,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -27,182 +23,38 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read project version
-        id: version
-        run: |
-          set -e
-          ASSEMBLY=$(grep -oE '<AssemblyVersion>[^<]+' Directory.Build.props | head -1 | sed 's/<AssemblyVersion>//')
-          if [ -z "$ASSEMBLY" ]; then
-            echo "::error::Could not read AssemblyVersion from Directory.Build.props"
-            exit 1
-          fi
-          # Tag is vX.Y.Z (strip the trailing .0 from the 4-part AssemblyVersion)
-          TAG="v$(echo "$ASSEMBLY" | sed -E 's/\.0$//')"
-          echo "assembly=$ASSEMBLY" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
-          echo "AssemblyVersion: $ASSEMBLY"
-          echo "Tag: $TAG"
-
-      - name: Skip if tag already exists
+      - name: Check for an unreleased version
         id: check
         run: |
-          set -e
-          TAG="${{ steps.version.outputs.tag }}"
-          # Look at remote tags too, so a tag pushed by a previous run of this
-          # workflow (race-y rerun, manual push) short-circuits us cleanly.
-          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1 \
-             || git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists; nothing to release."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          version=$(sed -n 's:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p' Directory.Build.props)
+          if git ls-remote --exit-code --tags origin "v$version" >/dev/null; then
+            echo "v$version is already released."
+            echo "release=false" >> "$GITHUB_OUTPUT"
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify csproj matches Directory.Build.props
-        if: steps.check.outputs.skip == 'false'
-        run: |
-          set -e
-          ASSEMBLY="${{ steps.version.outputs.assembly }}"
-          CSPROJ=$(grep -oE '<AssemblyVersion>[^<]+' LetterboxdSync/LetterboxdSync.csproj | head -1 | sed 's/<AssemblyVersion>//')
-          if [ "$CSPROJ" != "$ASSEMBLY" ]; then
-            echo "::error::LetterboxdSync.csproj AssemblyVersion ($CSPROJ) does not match Directory.Build.props ($ASSEMBLY). version-gate.yml should have caught this on the PR."
-            exit 1
-          fi
-
-      - name: Extract release body from merged PR
-        if: steps.check.outputs.skip == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SQUASH_MESSAGE: ${{ github.event.head_commit.message }}
-        run: |
-          set -e
-          # The squash-merge commit subject ends with " (#NN)" where NN is the
-          # PR number. Extract the PR number, fetch the PR body via gh CLI,
-          # and pull out the text between the "## Release notes" header and
-          # the next H2 (or EOF). That section is the user-facing prose that
-          # lands in manifest.json's changelog field and as the GitHub Release
-          # body. The pull_request_template.md primes every PR with the
-          # section so this is the path of least resistance.
-          SUBJECT=$(printf '%s' "$SQUASH_MESSAGE" | head -1)
-          PR=$(printf '%s' "$SUBJECT" | grep -oE '#[0-9]+' | tr -d '#' | tail -1 || true)
-          if [ -z "$PR" ]; then
-            echo "::warning::No PR number in commit subject; using subject as changelog."
-            printf '%s\n' "$SUBJECT" > /tmp/release-body.txt
-          else
-            echo "Fetching PR body for PR #$PR"
-            gh pr view "$PR" --json body --jq .body > /tmp/pr-body.txt
-            python3 << 'PY'
-          import os, re, sys
-          body = open('/tmp/pr-body.txt').read()
-          m = re.search(
-              r'^##\s+Release notes\s*$(.*?)(?=^##\s|\Z)',
-              body, re.MULTILINE | re.DOTALL)
-          notes = m.group(1).strip() if m else ''
-          with open('/tmp/release-body.txt', 'w') as f:
-              if notes:
-                  f.write(notes + '\n')
-              else:
-                  subj = os.environ.get('SQUASH_MESSAGE', '').split('\n', 1)[0]
-                  fallback = re.sub(r' \(#\d+\)$', '', subj)
-                  f.write(fallback + '\n')
-                  sys.stderr.write(
-                      "::warning::No '## Release notes' section in PR body; "
-                      "falling back to PR title. Add the section to keep the "
-                      "manifest changelog consistent with the older releases.\n")
-          PY
-          fi
-          echo "--- release body preview ---"
-          head -c 800 /tmp/release-body.txt
-          echo
-
-      - name: Setup .NET
-        if: steps.check.outputs.skip == 'false'
-        uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v5
+        if: steps.check.outputs.release == 'true'
         with:
           dotnet-version: '9.0.x'
 
-      - name: Restore
-        if: steps.check.outputs.skip == 'false'
-        run: dotnet restore
-
-      - name: Build
-        if: steps.check.outputs.skip == 'false'
-        run: dotnet build -c Release --no-restore
-
-      - name: Test
-        if: steps.check.outputs.skip == 'false'
-        run: dotnet test -c Release --no-build --verbosity normal --filter "Category!=Integration"
-
-      - name: Package
-        if: steps.check.outputs.skip == 'false'
+      - name: Release
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cd LetterboxdSync/bin/Release/net9.0
-          zip -j /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip Jellyscribe.dll HtmlAgilityPack.dll
-
-      - name: Compute checksum
-        if: steps.check.outputs.skip == 'false'
-        id: cs
-        run: |
-          CS=$(md5sum /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip | awk '{print $1}')
-          echo "checksum=$CS" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        if: steps.check.outputs.skip == 'false'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
-          files: /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip
-          body_path: /tmp/release-body.txt
-
-      - name: Insert manifest entry
-        # Manifest is CI-managed: only release.yml writes to it. Idempotent on
-        # re-run (updates existing entry in place if present).
-        if: steps.check.outputs.skip == 'false'
-        run: |
-          set -e
-          ASSEMBLY="${{ steps.version.outputs.assembly }}"
-          TAG="${{ steps.version.outputs.tag }}"
-          CS="${{ steps.cs.outputs.checksum }}"
-          # sourceUrl routes through the lbsync-telemetry Worker (GET /dl/<tag>/...),
-          # which 302s to the real GitHub asset below and counts the download as a
-          # unique-install signal. The release asset itself still lives on GitHub.
-          URL="https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/${TAG}/jellyfin-plugin-letterboxd-${TAG}.zip"
-          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          if [ -f targetAbi.txt ]; then
-            ABI=$(tr -d '[:space:]' < targetAbi.txt)
-          else
-            ABI=$(jq -r '.[0].versions[0].targetAbi // "10.11.0.0"' manifest.json)
+          subject=$(git log -1 --format=%s)
+          pr=$(echo "$subject" | sed -nE 's/.*\(#([0-9]+)\)$/\1/p')
+          notes=""
+          if [ -n "$pr" ]; then
+            notes=$(gh pr view "$pr" --json body -q .body | python3 -c '
+          import re, sys
+          m = re.search(r"^## Release notes\s*\n(.*?)(?=^## |\Z)", sys.stdin.read(), re.S | re.M)
+          notes = re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S) if m else ""
+          print(re.sub(r"^.*Generated with \[Claude Code\].*$", "", notes, flags=re.M).strip())')
           fi
-          echo "targetAbi for this release: $ABI"
-          CHANGELOG=$(cat /tmp/release-body.txt)
-
-          if jq -e --arg v "$ASSEMBLY" '.[0].versions | any(.version == $v)' manifest.json > /dev/null; then
-            echo "Updating existing $ASSEMBLY entry in place"
-            jq --arg v "$ASSEMBLY" --arg cs "$CS" --arg url "$URL" --arg ts "$TS" --arg cl "$CHANGELOG" \
-              '.[0].versions |= map(if .version == $v then (.checksum=$cs | .sourceUrl=$url | .timestamp=$ts | .changelog=$cl) else . end)' \
-              manifest.json > manifest.tmp
-          else
-            echo "Inserting new $ASSEMBLY entry at top of manifest"
-            jq --arg v "$ASSEMBLY" --arg cs "$CS" --arg url "$URL" --arg ts "$TS" --arg cl "$CHANGELOG" --arg abi "$ABI" \
-              '.[0].versions = ([{
-                version: $v,
-                changelog: $cl,
-                targetAbi: $abi,
-                sourceUrl: $url,
-                checksum: $cs,
-                timestamp: $ts
-              }] + .[0].versions)' \
-              manifest.json > manifest.tmp
-          fi
-          mv manifest.tmp manifest.json
-
-      - name: Commit manifest update
-        if: steps.check.outputs.skip == 'false'
-        run: |
+          [ -n "$notes" ] || notes="$subject"
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
-          git diff --cached --quiet && exit 0
-          git commit -m "Release ${{ steps.version.outputs.tag }} (manifest auto-update)"
-          git push origin HEAD:main
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          fork/release.sh "$notes"
