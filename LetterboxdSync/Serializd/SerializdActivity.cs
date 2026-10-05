@@ -54,12 +54,16 @@ public static class SerializdActivity
         {
             if (File.Exists(DataPath))
             {
+                var unreadable = 0;
                 foreach (var line in File.ReadLines(DataPath))
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     try { var e = JsonSerializer.Deserialize<SyncEvent>(line); if (e != null) _events.Add(e); }
-                    catch { }
+                    catch { unreadable++; }
                 }
+
+                if (unreadable > 0)
+                    _logger?.LogWarning("Skipped {Count} unreadable lines in Serializd activity {Path}", unreadable, DataPath);
             }
         }
         catch (Exception ex)
@@ -83,7 +87,10 @@ public static class SerializdActivity
     {
         try
         {
-            File.WriteAllLines(DataPath, events.Select(e => JsonSerializer.Serialize(e)));
+            // Write beside the file and swap it in, so a crash mid-write can't truncate the feed.
+            var tmp = DataPath + ".tmp";
+            File.WriteAllLines(tmp, events.Select(e => JsonSerializer.Serialize(e)));
+            File.Move(tmp, DataPath, overwrite: true);
         }
         catch (Exception ex)
         {
