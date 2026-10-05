@@ -128,7 +128,7 @@
                                 <div class="ws-sect-title" style="margin-top:0;"><h2>Notifications (ntfy)</h2><span class="rule"></span></div>
                                 <p class="ws-muted" style="font-size:12.5px;margin-top:0;">Get a push notification when syncing needs attention: a login that keeps failing, or a film Jellyscribe gave up on. Leave the URL empty to turn this off.</p>
                                 <div class="ws-row"><label class="ws-field">Topic URL</label><input type="text" class="ws-input" id="ntfyUrl" placeholder="https://ntfy.sh/your-topic" /></div>
-                                <div class="ws-row"><label class="ws-field">Access token <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="password" class="ws-input" id="ntfyToken" placeholder="tk_…" /></div>
+                                <div class="ws-row"><label class="ws-field">Access token <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="password" class="ws-input" id="ntfyToken" placeholder="tk_…" /><label class="ws-muted" id="ntfyTokenClearRow" style="display:none;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="ntfyTokenClear" /> Clear the saved token</label></div>
                                 <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testNtfyBtn">Send test</button><span id="ntfyTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                             </div>
                         </section>
@@ -160,7 +160,7 @@
                          2FA-blocked users at, and they have no way to tell it is their extension.
                          Reported in issue #112. Keep the visible label as "Raw cookies"; only the
                          attributes need to stay boring. -->
-                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span></label><input type="text" class="ws-input" id="mAuthBlob" placeholder="Paste from a signed-in browser (incl. cf_clearance)" /></div>
+                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span></label><input type="text" class="ws-input" id="mAuthBlob" placeholder="Paste from a signed-in browser (incl. cf_clearance)" /><label class="ws-muted" id="mAuthBlobClearRow" style="display:none;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="mAuthBlobClear" /> Clear the saved cookies</label></div>
                     <div class="ws-row" id="mUserAgentRow" style="display:none;"><label class="ws-field">User-Agent <span class="ws-muted" style="text-transform:none;">(optional, match the browser you copied cookies from)</span></label><input type="text" class="ws-input" id="mUserAgent" placeholder="Mozilla/5.0 …" /></div>
                     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;"><button type="button" class="ws-btn" id="mVerifyBtn">Verify login</button><span id="mVerifyStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                     <div class="ws-checks" id="mChecks"></div>
@@ -226,10 +226,8 @@
                         },
                         loadConfig: function () {
                             var self = this;
-                            ApiClient.getUsers().then(function (u) { self.users = u; return ApiClient.getPluginConfiguration(self.PluginId); })
-                                .then(function (c) {
-                                    self.config = c;
-                                    self.renderAccounts();
+                            ApiClient.getUsers().then(function (u) { self.users = u; return self.refreshConfig(true); })
+                                .then(function () {
                                     // Paused badges for accounts whose auth breaker is open. Fail-soft:
                                     // if the fetch errors, cards simply render without the badge.
                                     ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/AuthBreakers')).then(function (d) {
@@ -245,16 +243,31 @@
                                     ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Libraries')).then(function (d) {
                                         self.libraries = (d && d.libraries) || [];
                                     }).catch(function () { });
-                                    document.getElementById('jellyseerrUrl').value = c.JellyseerrUrl || '';
-                                    document.getElementById('jellyseerrApiKey').value = c.JellyseerrApiKey || '';
-                                    // Default on: older configs predate the field, and the option exists
-                                    // because pending requests never reach Radarr/Sonarr.
-                                    document.getElementById('autoApproveJellyseerr').checked = c.AutoApproveJellyseerrRequests !== false;
-                                    document.getElementById('ntfyUrl').value = c.NtfyUrl || '';
-                                    document.getElementById('ntfyToken').value = c.NtfyToken || '';
                                 }).catch(function () {
                                     document.getElementById('acctGroups').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('accounts', 'loadConfig') + '</div>';
                                 });
+                        },
+                        // Re-read after every save: the sent object holds what was typed, while the
+                        // server only ever returns whether a secret is saved (HasPassword and friends).
+                        refreshConfig: function (fillIntegrations) {
+                            var self = this;
+                            return ApiClient.getPluginConfiguration(self.PluginId).then(function (c) {
+                                self.config = c;
+                                self.renderAccounts();
+                                if (fillIntegrations) self.fillIntegrations();
+                            });
+                        },
+                        fillIntegrations: function () {
+                            var c = this.config;
+                            document.getElementById('jellyseerrUrl').value = c.JellyseerrUrl || '';
+                            this.fillSecret('jellyseerrApiKey', !!c.HasJellyseerrApiKey);
+                            // Default on: older configs predate the field, and the option exists
+                            // because pending requests never reach Radarr/Sonarr.
+                            document.getElementById('autoApproveJellyseerr').checked = c.AutoApproveJellyseerrRequests !== false;
+                            document.getElementById('ntfyUrl').value = c.NtfyUrl || '';
+                            this.fillSecret('ntfyToken', !!c.HasNtfyToken);
+                            document.getElementById('ntfyTokenClear').checked = false;
+                            document.getElementById('ntfyTokenClearRow').style.display = c.HasNtfyToken ? 'block' : 'none';
                         },
                         userName: function (idHex) {
                             var u = this.users.filter(function (x) { return (x.Id || '').replace(/-/g, '') === idHex; })[0];
@@ -394,7 +407,7 @@
                             var paused = svc !== 'serializd' && ((self.breakers || {})[(a.UserJellyfinId || '') + '|' + (a.LetterboxdUsername || '').toLowerCase()] || '');
                             var feats;
                             if (svc === 'serializd') feats = [['Favourites', a.SyncFavorites], ['Watchlist', a.SyncWatchlist], ['Seerr', a.AutoRequestWatchlist], ['Import', a.EnableDiaryImport], ['Date filter', a.EnableDateFilter]];
-                            else feats = [['Favourites', a.SyncFavorites], ['Watchlist', a.EnableWatchlistSync], ['Seerr', a.AutoRequestWatchlist], ['Import', a.EnableDiaryImport], ['Cookies', !!a.RawCookies]];
+                            else feats = [['Favourites', a.SyncFavorites], ['Watchlist', a.EnableWatchlistSync], ['Seerr', a.AutoRequestWatchlist], ['Import', a.EnableDiaryImport], ['Cookies', !!a.HasRawCookies]];
                             var chips = feats.map(function (f) { return self.featChip(f[0], f[1]); }).join('');
                             return '<div class="ws-acct ' + (svc === 'serializd' ? 'tv' : 'film') + '">' +
                                 '<div class="top"><span class="ws-badge ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'TV' : 'MV') + '</span>' +
@@ -454,8 +467,10 @@
                             var usel = document.getElementById('mUser');
                             usel.innerHTML = self.users.map(function (u) { var h = (u.Id || '').replace(/-/g, ''); return '<option value="' + self.escAttr(h) + '"' + (h === userId ? ' selected' : '') + '>' + self.escAttr(u.Name) + '</option>'; }).join('');
                             document.getElementById('mUsername').value = a ? (svc === 'serializd' ? a.Email : a.LetterboxdUsername) : '';
-                            document.getElementById('mPassword').value = a ? (svc === 'serializd' ? (a.Password || '') : (a.LetterboxdPassword || '')) : '';
-                            document.getElementById('mAuthBlob').value = (a && a.RawCookies) || '';
+                            self.fillSecret('mPassword', !!(a && a.HasPassword));
+                            self.fillSecret('mAuthBlob', !!(a && a.HasRawCookies));
+                            document.getElementById('mAuthBlobClear').checked = false;
+                            document.getElementById('mAuthBlobClearRow').style.display = a && a.HasRawCookies ? 'block' : 'none';
                             document.getElementById('mUserAgent').value = (a && a.UserAgent) || '';
                             document.getElementById('mWatchName').value = (a && (svc === 'serializd' ? a.WatchlistName : a.PlaylistName)) || '';
                             document.getElementById('mVerifyStatus').textContent = ''; document.getElementById('mStatus').textContent = '';
@@ -472,20 +487,21 @@
                             if (!m.username) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Username/email is required.</span>'; return; }
                             if (m.svc === 'letterboxd' && m.username.indexOf('@') >= 0) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Letterboxd no longer accepts an email address to sign in. Use your Letterboxd username, the name in letterboxd.com/&lt;username&gt;/.</span>'; return; }
                             var orig = self.editing.original, prevLb = self.config.Accounts, prevSz = self.config.SerializdAccounts;
+                            if (self.renamedWithoutPassword(m, orig && (m.svc === 'serializd' ? orig.Email : orig.LetterboxdUsername), !!(orig && orig.HasPassword))) { document.getElementById('mStatus').innerHTML = self.renamedMessage; return; }
                             var excludedLibs = self.mergeExcluded((orig && orig.ExcludedLibraryIds) || [], m.libs);
                             if (m.svc === 'serializd') {
                                 self.config.SerializdAccounts = (self.config.SerializdAccounts || []).filter(function (x) { return x !== orig; });
                                 self.config.SerializdAccounts.push({ UserJellyfinId: m.userId, Email: m.username, Password: m.password, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, SyncWatchlist: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, WatchlistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });
                             } else {
                                 self.config.Accounts = (self.config.Accounts || []).filter(function (x) { return x !== orig; });
-                                self.config.Accounts.push({ UserJellyfinId: m.userId, LetterboxdUsername: m.username, LetterboxdPassword: m.password, RawCookies: m.cookies || null, UserAgent: m.userAgent || null, Enabled: m.enabled, SyncFavorites: m.fav, SyncRatings: m.ratings, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, EnableWatchlistSync: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, PlaylistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });
+                                self.config.Accounts.push({ UserJellyfinId: m.userId, LetterboxdUsername: m.username, LetterboxdPassword: m.password, RawCookies: m.cookies || null, ClearRawCookies: m.clearCookies, UserAgent: m.userAgent || null, Enabled: m.enabled, SyncFavorites: m.fav, SyncRatings: m.ratings, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, EnableWatchlistSync: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, PlaylistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });
                             }
                             document.getElementById('mStatus').textContent = 'Saving…';
                             self.setModalBusy(true);
                             ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {
                                 self.setModalBusy(false);
                                 document.getElementById('acctModal').classList.remove('show');
-                                self.renderAccounts();
+                                self.refreshConfig(false).catch(function () { self.renderAccounts(); });
                                 Dashboard.processPluginConfigurationUpdateResult();
                             }, function (err) {
                                 self.config.Accounts = prevLb; self.config.SerializdAccounts = prevSz;
@@ -503,7 +519,8 @@
                             self.setModalBusy(true);
                             ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {
                                 self.setModalBusy(false);
-                                document.getElementById('acctModal').classList.remove('show'); self.renderAccounts();
+                                document.getElementById('acctModal').classList.remove('show');
+                                self.refreshConfig(false).catch(function () { self.renderAccounts(); });
                             }, function (err) {
                                 self.config.Accounts = prevLb; self.config.SerializdAccounts = prevSz;
                                 self.setModalBusy(false);
@@ -512,19 +529,22 @@
                         },
                         verifyAccount: function () {
                             var self = this, svc = document.getElementById('mSvc').value, st = document.getElementById('mVerifyStatus');
+                            var orig = self.editing && self.editing.original, owner = document.getElementById('mUser').value;
+                            // An empty password field verifies the saved one, which the server looks up by owner + username.
+                            var saved = function (name) { return !!(orig && orig.HasPassword) && orig.UserJellyfinId === owner && String((svc === 'serializd' ? orig.Email : orig.LetterboxdUsername) || '').toLowerCase() === name.toLowerCase(); };
                             if (svc === 'letterboxd') {
                                 var lbUser = document.getElementById('mUsername').value.trim(), lbPw = document.getElementById('mPassword').value;
-                                if (!lbUser || !lbPw) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
+                                if (!lbUser || (!lbPw && !saved(lbUser))) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
                                 st.innerHTML = '<span class="ws-muted">Verifying… (can take a few seconds)</span>';
-                                ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ letterboxdUsername: lbUser, letterboxdPassword: lbPw, rawCookies: document.getElementById('mAuthBlob').value || null, userAgent: document.getElementById('mUserAgent').value.trim() || null }) })
+                                ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ letterboxdUsername: lbUser, letterboxdPassword: lbPw, rawCookies: document.getElementById('mAuthBlob').value || null, clearRawCookies: document.getElementById('mAuthBlobClear').checked, userAgent: document.getElementById('mUserAgent').value.trim() || null, userJellyfinId: owner }) })
                                     .then(function (r) { r.json().then(function (d) { st.innerHTML = self.verifyMessage(true, d); }); },
                                         function (r) { if (r && r.json) r.json().then(function (d) { st.innerHTML = self.verifyMessage(false, d); }, function () { st.innerHTML = self.verifyMessage(false, null); }); else st.innerHTML = self.verifyMessage(false, null); });
                                 return;
                             }
                             var email = document.getElementById('mUsername').value.trim(), pw = document.getElementById('mPassword').value;
-                            if (!email || !pw) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
+                            if (!email || (!pw && !saved(email))) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
                             st.innerHTML = '<span class="ws-muted">Verifying…</span>';
-                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Serializd/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ email: email, password: pw }) })
+                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Serializd/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ email: email, password: pw, userJellyfinId: owner }) })
                                 .then(function (r) { r.json().then(function (d) { st.innerHTML = '<span class="ws-green">Login OK' + (d.username ? ' (' + self.escAttr(d.username) + ')' : '') + '.</span>'; }); },
                                     function () { st.innerHTML = '<span class="ws-red">Login failed. Check email and password.</span>'; });
                         },
@@ -551,22 +571,25 @@
                         },
                         /* ===== Integrations & logs ===== */
                         saveIntegrations: function () {
-                            var self = this, prev = [self.config.JellyseerrUrl, self.config.JellyseerrApiKey, self.config.AutoApproveJellyseerrRequests, self.config.NtfyUrl, self.config.NtfyToken];
+                            var self = this, prev = [self.config.JellyseerrUrl, self.config.AutoApproveJellyseerrRequests, self.config.NtfyUrl];
+                            // Empty secret fields keep the saved values server-side.
                             self.config.JellyseerrUrl = document.getElementById('jellyseerrUrl').value.trim() || null;
                             self.config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
                             self.config.AutoApproveJellyseerrRequests = document.getElementById('autoApproveJellyseerr').checked;
                             self.config.NtfyUrl = document.getElementById('ntfyUrl').value.trim() || null;
                             self.config.NtfyToken = document.getElementById('ntfyToken').value.trim() || null;
+                            self.config.ClearNtfyToken = !self.config.NtfyToken && document.getElementById('ntfyTokenClear').checked;
                             var btn = document.getElementById('saveIntegrationsBtn'), st = document.getElementById('integrationsStatus');
                             btn.disabled = true;
                             st.textContent = 'Saving…';
                             ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {
                                 btn.disabled = false;
                                 st.innerHTML = '<span class="ws-green">Saved</span>';
+                                self.refreshConfig(true).catch(function () { });
                                 Dashboard.processPluginConfigurationUpdateResult();
                             }, function (err) {
-                                self.config.JellyseerrUrl = prev[0]; self.config.JellyseerrApiKey = prev[1]; self.config.AutoApproveJellyseerrRequests = prev[2];
-                                self.config.NtfyUrl = prev[3]; self.config.NtfyToken = prev[4];
+                                self.config.JellyseerrUrl = prev[0]; self.config.AutoApproveJellyseerrRequests = prev[1]; self.config.NtfyUrl = prev[2];
+                                delete self.config.JellyseerrApiKey; delete self.config.NtfyToken; delete self.config.ClearNtfyToken;
                                 btn.disabled = false;
                                 self.saveFailed(err, 'integrationsStatus');
                             });
@@ -574,7 +597,8 @@
                         testJellyseerr: function () {
                             var url = document.getElementById('jellyseerrUrl').value.trim(), key = document.getElementById('jellyseerrApiKey').value.trim();
                             var st = document.getElementById('jellyseerrTestStatus');
-                            if (!url || !key) { st.innerHTML = '<span class="ws-red">URL and API key required.</span>'; return; }
+                            // An empty key tests the saved one; the server only uses it against the saved URL.
+                            if (!url || (!key && !this.config.HasJellyseerrApiKey)) { st.innerHTML = '<span class="ws-red">URL and API key required.</span>'; return; }
                             st.innerHTML = '<span class="ws-muted">Testing…</span>';
                             ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/TestJellyseerr'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, apiKey: key }) })
                                 .then(function (r) { r.json().then(function (d) { st.innerHTML = d.linkedToCurrentUser ? '<span class="ws-green">Connected. Linked to Seerr user ' + WS.escAttr(d.jellyseerrUserId) + '.</span>' : '<span style="color:var(--ws-info);">Connected, but no Seerr user linked to you.</span>'; }); },

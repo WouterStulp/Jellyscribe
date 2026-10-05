@@ -280,6 +280,19 @@ window.JellyscribeShared = {
     },
 
     /* ===== Account modal ===== */
+    // Secrets are write-only: the server only says whether one is saved. The field stays empty
+    // (empty on save keeps the stored value) and its placeholder says it is saved.
+    fillSecret: function (id, saved) {
+        var el = document.getElementById(id);
+        if (!el.hasAttribute('data-ph')) el.setAttribute('data-ph', el.placeholder || '');
+        el.value = '';
+        el.placeholder = saved ? '•••••• saved, leave empty to keep' : el.getAttribute('data-ph');
+    },
+    // Stored secrets only carry over to the same login, so a renamed one needs its password again.
+    renamedWithoutPassword: function (m, origName, hadPassword) {
+        return !!origName && hadPassword && !m.password && origName.toLowerCase() !== m.username.toLowerCase();
+    },
+    renamedMessage: '<span class="ws-red">Enter the password again (and the cookies, if used) when you change the username.</span>',
     featChip: function (label, on) { return '<span class="ws-feat ' + (on ? 'on' : '') + '">' + label + '</span>'; },
     // Stored ids for libraries this page listed are replaced by what is ticked; ids for libraries
     // it did not list are kept (an admin may have excluded one the user cannot see), so a partial
@@ -309,7 +322,7 @@ window.JellyscribeShared = {
         var g = function (id) { return document.getElementById(id); };
         return {
             svc: g('mSvc').value, userId: g('mUser') ? g('mUser').value : null,
-            username: g('mUsername').value.trim(), password: g('mPassword').value, cookies: g('mAuthBlob').value,
+            username: g('mUsername').value.trim(), password: g('mPassword').value, cookies: g('mAuthBlob').value, clearCookies: g('mAuthBlobClear').checked && !g('mAuthBlob').value,
             userAgent: g('mUserAgent').value.trim(), watchName: g('mWatchName').value.trim(),
             enabled: g('chkEnabled').checked, fav: g('chkFav').checked, ratings: g('chkRatings') ? g('chkRatings').checked : true, date: g('chkDate').checked, days: parseInt(g('chkDateDays').value, 10) || 7,
             primary: g('chkPrimary').checked, watch: g('chkWatch').checked, seerr: g('chkSeerr').checked,

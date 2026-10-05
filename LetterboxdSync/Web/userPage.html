@@ -93,7 +93,7 @@
                          2FA-blocked users at, and they have no way to tell it is their extension.
                          Reported in issue #112. Keep the visible label as "Raw cookies"; only the
                          attributes need to stay boring. -->
-                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span></label><input type="text" class="ws-input" id="mAuthBlob" placeholder="From a signed-in browser (incl. cf_clearance)" /></div>
+                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span></label><input type="text" class="ws-input" id="mAuthBlob" placeholder="From a signed-in browser (incl. cf_clearance)" /><label class="ws-muted" id="mAuthBlobClearRow" style="display:none;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="mAuthBlobClear" /> Clear the saved cookies</label></div>
                     <div class="ws-row" id="mUserAgentRow" style="display:none;"><label class="ws-field">User-Agent <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mUserAgent" placeholder="Mozilla/5.0 …" /></div>
                     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;"><button type="button" class="ws-btn" id="mVerifyBtn">Verify login</button><span id="mVerifyStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                     <div class="ws-checks" id="mChecks"></div>
@@ -267,7 +267,7 @@
                             var self = this, uname = svc === 'serializd' ? (a.email || '?') : (a.letterboxdUsername || '?');
                             var feats = svc === 'serializd'
                                 ? [['Favourites', a.syncFavorites], ['Watchlist', a.syncWatchlist], ['Seerr', a.autoRequestWatchlist], ['Import', a.enableDiaryImport]]
-                                : [['Favourites', a.syncFavorites], ['Watchlist', a.enableWatchlistSync], ['Seerr', a.autoRequestWatchlist], ['Cookies', !!a.rawCookies]];
+                                : [['Favourites', a.syncFavorites], ['Watchlist', a.enableWatchlistSync], ['Seerr', a.autoRequestWatchlist], ['Cookies', !!a.hasCookies]];
                             var chips = feats.map(function (f) { return self.featChip(f[0], f[1]); }).join('');
                             return '<div class="ws-acct ' + (svc === 'serializd' ? 'tv' : 'film') + '"><div class="top"><span class="ws-badge ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'TV' : 'MV') + '</span><div style="min-width:0;"><div class="u" title="' + self.esc(uname) + '">' + self.esc(uname) + '</div><div class="svc ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'Serializd · TV' : 'Letterboxd · Film') + '</div></div>' + (a.isPrimary ? '<span class="ws-prim">Primary</span>' : '') + '</div><div class="ws-featchips">' + chips + '</div><div class="foot"><span class="st">' + (a.authPaused ? '<span class="ws-red" title="Letterboxd login has been failing since ' + self.esc(a.authPausedSince ? self.formatDate(a.authPausedSince) : '?') + '. Re-save this account\'s credentials to resume syncing.">Login failing · sync paused</span>' : (a.enabled !== false ? '<span class="ws-green">Enabled</span>' : '<span class="ws-muted">Paused</span>')) + '</span><button type="button" class="ws-linkbtn" onclick="WSU.openAccount({svc:\'' + svc + '\',i:' + i + '})">Edit ›</button></div></div>';
                         },
@@ -308,8 +308,10 @@
                             document.getElementById('acctModalTitle').textContent = a ? 'Edit account' : 'Link a diary';
                             document.getElementById('mSvc').value = svc; document.getElementById('mSvc').disabled = !!a;
                             document.getElementById('mUsername').value = a ? (svc === 'serializd' ? a.email : a.letterboxdUsername) : '';
-                            document.getElementById('mPassword').value = a ? (svc === 'serializd' ? (a.password || '') : (a.letterboxdPassword || '')) : '';
-                            document.getElementById('mAuthBlob').value = (a && a.rawCookies) || '';
+                            self.fillSecret('mPassword', !!(a && a.hasPassword));
+                            self.fillSecret('mAuthBlob', !!(a && a.hasCookies));
+                            document.getElementById('mAuthBlobClear').checked = false;
+                            document.getElementById('mAuthBlobClearRow').style.display = a && a.hasCookies ? 'block' : 'none';
                             document.getElementById('mUserAgent').value = (a && a.userAgent) || '';
                             document.getElementById('mWatchName').value = (a && (svc === 'serializd' ? a.watchlistName : a.playlistName)) || '';
                             document.getElementById('mVerifyStatus').textContent = ''; document.getElementById('mStatus').textContent = '';
@@ -325,8 +327,9 @@
                             var self = this, m = self.collectModal();
                             if (!m.username) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Username/email is required.</span>'; return; }
                             if (m.svc === 'letterboxd' && m.username.indexOf('@') >= 0) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Letterboxd no longer accepts an email address to sign in. Use your Letterboxd username, the name in letterboxd.com/&lt;username&gt;/.</span>'; return; }
-                            document.getElementById('mStatus').textContent = 'Saving…';
                             var orig = self.editing ? (m.svc === 'serializd' ? self.sz : self.lb)[self.editing.i] : null;
+                            if (self.renamedWithoutPassword(m, orig && (m.svc === 'serializd' ? orig.email : orig.letterboxdUsername), !!(orig && orig.hasPassword))) { document.getElementById('mStatus').innerHTML = self.renamedMessage; return; }
+                            document.getElementById('mStatus').textContent = 'Saving…';
                             var prevLb = self.lb.slice(), prevSz = self.sz.slice();
                             self.setModalBusy(true);
                             var excludedLibs = self.mergeExcluded((orig && orig.excludedLibraryIds) || [], m.libs);
@@ -335,7 +338,7 @@
                                 if (self.editing) self.sz[self.editing.i] = item; else self.sz.push(item);
                                 self.put('Jellyfin.Plugin.LetterboxdSync/Serializd/Accounts', { accounts: self.sz }).then(self.json).then(function () { self.afterSave(); }, function (err) { self.sz = prevSz; self.afterSave(err); });
                             } else {
-                                var itemL = { letterboxdUsername: m.username, letterboxdPassword: m.password, rawCookies: m.cookies || null, userAgent: m.userAgent || null, enabled: m.enabled, syncFavorites: m.fav, syncRatings: m.ratings, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, enableWatchlistSync: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, playlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
+                                var itemL = { letterboxdUsername: m.username, letterboxdPassword: m.password, rawCookies: m.cookies || null, clearRawCookies: m.clearCookies, userAgent: m.userAgent || null, enabled: m.enabled, syncFavorites: m.fav, syncRatings: m.ratings, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, enableWatchlistSync: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, playlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
                                 if (self.editing) self.lb[self.editing.i] = itemL; else self.lb.push(itemL);
                                 self.put('Jellyfin.Plugin.LetterboxdSync/Accounts', { accounts: self.lb }).then(self.json).then(function () { self.afterSave(); }, function (err) { self.lb = prevLb; self.afterSave(err); });
                             }
@@ -344,7 +347,8 @@
                             var self = this;
                             self.setModalBusy(false);
                             if (err) { self.saveFailed(err); return; }
-                            document.getElementById('acctModal').classList.remove('show'); self.renderAccounts(); document.getElementById('saveStatus').innerHTML = '<span class="ws-green">Saved.</span>';
+                            // Reload rather than keep the sent rows: they hold what was typed, not the saved flags.
+                            document.getElementById('acctModal').classList.remove('show'); self.loadAccounts(); document.getElementById('saveStatus').innerHTML = '<span class="ws-green">Saved.</span>';
                         },
                         deleteAccount: function () {
                             var self = this; if (!self.editing) return;
@@ -358,16 +362,19 @@
                         },
                         verifyAccount: function () {
                             var self = this, svc = document.getElementById('mSvc').value, st = document.getElementById('mVerifyStatus');
+                            var orig = self.editing ? (svc === 'serializd' ? self.sz : self.lb)[self.editing.i] : null;
+                            // An empty password field verifies the saved one, which the server looks up by username.
+                            var saved = function (name) { return !!(orig && orig.hasPassword) && String((svc === 'serializd' ? orig.email : orig.letterboxdUsername) || '').toLowerCase() === name.toLowerCase(); };
                             if (svc === 'letterboxd') {
                                 var lbUser = document.getElementById('mUsername').value.trim(), lbPw = document.getElementById('mPassword').value;
-                                if (!lbUser || !lbPw) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
+                                if (!lbUser || (!lbPw && !saved(lbUser))) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
                                 st.innerHTML = '<span class="ws-muted">Verifying… (can take a few seconds)</span>';
-                                self.post('Jellyfin.Plugin.LetterboxdSync/Verify', { letterboxdUsername: lbUser, letterboxdPassword: lbPw, rawCookies: document.getElementById('mAuthBlob').value || null, userAgent: document.getElementById('mUserAgent').value.trim() || null })
+                                self.post('Jellyfin.Plugin.LetterboxdSync/Verify', { letterboxdUsername: lbUser, letterboxdPassword: lbPw, rawCookies: document.getElementById('mAuthBlob').value || null, clearRawCookies: document.getElementById('mAuthBlobClear').checked, userAgent: document.getElementById('mUserAgent').value.trim() || null })
                                     .then(function (r) { r.json().then(function (d) { st.innerHTML = self.verifyMessage(r.ok, d); }, function () { st.innerHTML = self.verifyMessage(r.ok, null); }); });
                                 return;
                             }
                             var email = document.getElementById('mUsername').value.trim(), pw = document.getElementById('mPassword').value;
-                            if (!email || !pw) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
+                            if (!email || (!pw && !saved(email))) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
                             st.innerHTML = '<span class="ws-muted">Verifying…</span>';
                             this.post('Jellyfin.Plugin.LetterboxdSync/Serializd/Verify', { email: email, password: pw }).then(function (r) { if (r.ok) { r.json().then(function (d) { st.innerHTML = '<span class="ws-green">Login OK' + (d.username ? ' (' + self.esc(d.username) + ')' : '') + '.</span>'; }); } else { st.innerHTML = '<span class="ws-red">Login failed.</span>'; } });
                         },
