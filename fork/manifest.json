@@ -8,6 +8,14 @@
     "owner": "WouterStulp",
     "versions": [
       {
+        "version": "2.10.0.2",
+        "changelog": "Based on Jellyscribe 2.10.0. New: shows you watch are now marked as Currently watching on Serializd the first time an episode is logged, so they appear on your Serializd profile instead of only in the diary. Shows you have already finished in Jellyfin are left alone. Also includes the two fixes from 2.10.0.1: history survives renaming a Jellyfin user, and later anime seasons that Serializd lists as one long season are logged at their running episode number.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/WouterStulp/Jellyscribe/releases/download/v2.10.0.2/jellyscribe-v2.10.0.2.zip",
+        "checksum": "9a846aaa1a941d2ff7a4a6f272996d07",
+        "timestamp": "2026-10-05T09:52:24Z"
+      },
+      {
         "version": "2.10.0.1",
         "changelog": "Based on Jellyscribe 2.10.0, plus two fixes that are not in the official release yet. Renaming a Jellyfin user no longer empties their history or weakens the duplicate checks, because history is now tied to the Jellyfin user rather than their name. Later seasons of anime that Serializd lists as one long season, such as The Apothecary Diaries season 2, are logged to Serializd at their running episode number instead of being skipped.",
         "targetAbi": "10.11.9.0",
