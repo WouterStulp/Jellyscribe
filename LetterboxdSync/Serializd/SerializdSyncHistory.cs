@@ -65,8 +65,12 @@ public static class SerializdSyncHistory
 
     public const string KindCurrentlyWatching = "watching";
 
-    /// <summary>The show was fully watched in Jellyfin when first seen, so it is never marked currently watching.</summary>
+    /// <summary>The show was fully watched in Jellyfin, so it is never (again) marked currently watching.</summary>
     public const string KindFinished = "finished";
+
+    /// <summary>The finished show was marked watched as a whole (watched_v2). Distinct from
+    /// <see cref="KindWatched"/>, which is per episode.</summary>
+    public const string KindShowWatched = "showwatched";
 
     private static string Key(string userJellyfinId, string accountEmail, int showTmdbId, int seasonNumber, int episodeNumber, string kind)
     {
