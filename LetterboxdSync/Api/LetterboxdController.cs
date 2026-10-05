@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net.Mime;
 using System.Threading;
@@ -731,85 +730,12 @@ public class LetterboxdController : JellyfinUserApiController
     public ActionResult GetLogs([FromQuery] int maxLines = 500)
     {
         var cap = Math.Min(Math.Max(maxLines, 1), 5000);
-        var (all, source, error) = ReadRecentLogLines();
+        var (all, source, error) = LogReader.ReadRecentLogLines(_appPaths, _logger);
         if (error != null)
             return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error });
 
         var trimmed = all.Count > cap ? all.GetRange(all.Count - cap, cap) : all;
         return Ok(new { lines = trimmed, totalMatches = all.Count, returned = trimmed.Count, source });
-    }
-
-    // Matches a Jellyfin log-entry header start: "[2026-06-14 ...". Continuation lines
-    // (stack frames, exception messages) do not begin this way.
-    private static readonly System.Text.RegularExpressions.Regex _logHeader =
-        new(@"^\[\d{4}-\d{2}-\d{2}", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    // ANSI CSI escape sequences (colour codes) that some console sinks emit.
-    private static readonly System.Text.RegularExpressions.Regex _ansi =
-        new(@"\x1B\[[0-9;]*[A-Za-z]", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private static bool IsLogHeader(string line) => _logHeader.IsMatch(line);
-
-    private static string StripAnsi(string line) => _ansi.Replace(line, string.Empty);
-
-    /// <summary>
-    /// Reads ALL recent LetterboxdSync-tagged lines from Jellyfin's two newest main
-    /// log files (covering a just-rolled-over file), untrimmed, for the Logs tab. The
-    /// plugin never logs auth tokens, passwords, cookies, or review text, so these
-    /// lines are safe to share.
-    /// </summary>
-    private (List<string> Lines, string? Source, string? Error) ReadRecentLogLines()
-    {
-        try
-        {
-            var logDir = _appPaths.LogDirectoryPath;
-            if (!Directory.Exists(logDir))
-                return (new List<string>(), null, "log directory not found");
-
-            var mainLogs = Directory.GetFiles(logDir, "log_*.log")
-                .OrderByDescending(f => f)
-                .Take(2)
-                .ToList();
-            if (mainLogs.Count == 0)
-                return (new List<string>(), null, "no log files");
-
-            var lines = new List<string>();
-            foreach (var path in mainLogs.AsEnumerable().Reverse())
-            {
-                // Force UTF-8 so non-ASCII (accented/CJK film titles) round-trips cleanly.
-                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var sr = new StreamReader(fs, System.Text.Encoding.UTF8);
-                string? line;
-                // A matched LetterboxdSync entry is often multi-line: the header line carries
-                // the tag, but the exception message and "   at ..." stack frames continue on
-                // following lines that DON'T carry the tag. Capture those continuation lines
-                // too (until the next timestamped header) or the most useful diagnostic, the
-                // stack trace, gets shredded by a per-line filter.
-                var inMatch = false;
-                while ((line = sr.ReadLine()) != null)
-                {
-                    line = StripAnsi(line);
-                    var isHeader = IsLogHeader(line);
-                    if (isHeader)
-                    {
-                        inMatch = line.Contains("LetterboxdSync", StringComparison.Ordinal) ||
-                                  line.Contains("Letterboxd ", StringComparison.Ordinal);
-                        if (inMatch) lines.Add(line);
-                    }
-                    else if (inMatch)
-                    {
-                        lines.Add(line); // continuation of a matched entry (stack frame / message)
-                    }
-                }
-            }
-
-            return (lines, string.Join(", ", mainLogs.Select(Path.GetFileName)), null);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning("ReadRecentLogLines failed: {Message}", ex.Message);
-            return (new List<string>(), null, ex.Message);
-        }
     }
 
     /// <summary>
@@ -865,41 +791,49 @@ public class LetterboxdController : JellyfinUserApiController
     /// rating writeback and the ItemRating read path so the two cannot drift.
     /// </summary>
     private BaseItem? FindMovieByTmdbId(User user, int tmdbId)
-    {
-        return _libraryManager.GetItemList(new InternalItemsQuery(user)
-        {
-            IncludeItemTypes = new[] { BaseItemKind.Movie },
-            IsVirtualItem = false,
-            Recursive = true
-        }).FirstOrDefault(m => m.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == tmdbId.ToString());
-    }
+        => FindByTmdbId(user, BaseItemKind.Movie, tmdbId).FirstOrDefault();
 
     private BaseItem? FindSeriesByTmdbId(User user, int tmdbId)
-    {
-        return _libraryManager.GetItemList(new InternalItemsQuery(user)
-        {
-            IncludeItemTypes = new[] { BaseItemKind.Series },
-            IsVirtualItem = false,
-            Recursive = true
-        }).FirstOrDefault(s => s.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == tmdbId.ToString());
-    }
+        => FindByTmdbId(user, BaseItemKind.Series, tmdbId).FirstOrDefault();
 
     /// <summary>
     /// Resolve an episode by series TMDb id + season/episode number. The series
-    /// TMDb id lives on the parent Series entity; SeriesTmdbIdReader is the one
-    /// place that knows that, shared with Serializd sync.
+    /// TMDb id lives on the parent Series entity, so the series is resolved first
+    /// and its episodes are then queried by number.
     /// </summary>
     private BaseItem? FindEpisodeByTmdbId(User user, int seriesTmdbId, int seasonNumber, int episodeNumber)
     {
+        var seriesIds = FindByTmdbId(user, BaseItemKind.Series, seriesTmdbId).Select(s => s.Id).ToArray();
+        if (seriesIds.Length == 0)
+            return null;
+
         return _libraryManager.GetItemList(new InternalItemsQuery(user)
         {
             IncludeItemTypes = new[] { BaseItemKind.Episode },
             IsVirtualItem = false,
-            Recursive = true
+            Recursive = true,
+            AncestorIds = seriesIds,
+            ParentIndexNumber = seasonNumber,
+            IndexNumber = episodeNumber
         }).OfType<MediaBrowser.Controller.Entities.TV.Episode>()
-          .FirstOrDefault(ep => Serializd.SerializdSyncRunner.SeriesTmdbIdReader(ep) == seriesTmdbId
-              && ep.ParentIndexNumber == seasonNumber
-              && ep.IndexNumber == episodeNumber);
+          .FirstOrDefault(ep => ep.ParentIndexNumber == seasonNumber && ep.IndexNumber == episodeNumber);
+    }
+
+    /// <summary>
+    /// Library items of one kind carrying the given TMDb id, filtered in the database
+    /// instead of loading the whole library. The id is re-checked in memory, so a query
+    /// that ever came back looser could not resolve (and write a rating to) the wrong item.
+    /// </summary>
+    private IEnumerable<BaseItem> FindByTmdbId(User user, BaseItemKind kind, int tmdbId)
+    {
+        var id = tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = new[] { kind },
+            IsVirtualItem = false,
+            Recursive = true,
+            HasAnyProviderId = new Dictionary<string, string> { [MediaBrowser.Model.Entities.MetadataProvider.Tmdb.ToString()] = id }
+        }).Where(item => item.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == id);
     }
 
     /// <summary>

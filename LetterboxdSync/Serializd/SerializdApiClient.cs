@@ -208,27 +208,9 @@ public class SerializdApiClient : ISerializdService
     public async Task CreateEpisodeLogAsync(int showTmdbId, int seasonId, int episodeNumber,
         DateTime watchedAtUtc, int? rating, bool isRewatch)
     {
-        // snake_case body (see /show/reviews/add). is_log=true makes it a dated Diary entry;
-        // backdate is the watch date. rating is required by /show/reviews/add (omitting it
-        // returns HTTP 500); 0 = unrated.
-        var payload = new Dictionary<string, object>
-        {
-            ["show_id"] = showTmdbId,
-            ["season_id"] = seasonId,
-            ["episode_number"] = episodeNumber,
-            ["review_text"] = string.Empty,
-            ["contains_spoiler"] = false,
-            ["backdate"] = watchedAtUtc.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-            ["is_log"] = true,
-            ["is_rewatch"] = isRewatch,
-            ["tags"] = Array.Empty<string>(),
-            ["allows_comments"] = true,
-            ["like"] = false,
-        };
-        // rating is required by /show/reviews/add (omitting it returns HTTP 500); 0 = unrated.
-        payload["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0;
-
-        var body = JsonSerializer.Serialize(payload);
+        // is_log=true makes it a dated Diary entry; backdate is the watch date.
+        var body = JsonSerializer.Serialize(ReviewPayload(showTmdbId, seasonId, episodeNumber, string.Empty,
+            containsSpoiler: false, backdate: watchedAtUtc, isLog: true, isRewatch, like: false, rating));
         using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
@@ -236,6 +218,29 @@ public class SerializdApiClient : ISerializdService
             throw new Exception($"Serializd /show/reviews/add failed ({(int)resp.StatusCode}): {err}");
         }
     }
+
+    /// <summary>
+    /// Body for <c>/show/reviews/add</c>, shared by diary logs, reviews and show ratings. Every
+    /// key is always sent: season_id/episode_number go as null for a whole-show entry, and
+    /// rating is required (omitting it returns HTTP 500), with 0 meaning unrated.
+    /// </summary>
+    private static Dictionary<string, object?> ReviewPayload(int showTmdbId, int? seasonId, int? episodeNumber,
+        string reviewText, bool containsSpoiler, DateTime backdate, bool isLog, bool isRewatch, bool like, int? rating)
+        => new()
+        {
+            ["show_id"] = showTmdbId,
+            ["season_id"] = seasonId,
+            ["episode_number"] = episodeNumber,
+            ["review_text"] = reviewText,
+            ["contains_spoiler"] = containsSpoiler,
+            ["backdate"] = backdate.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            ["is_log"] = isLog,
+            ["is_rewatch"] = isRewatch,
+            ["tags"] = Array.Empty<string>(),
+            ["allows_comments"] = true,
+            ["like"] = like,
+            ["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0,
+        };
 
     private async Task PostEpisodeLogAsync(string path, int showTmdbId, int seasonId, IReadOnlyList<int> episodeNumbers)
     {
@@ -402,22 +407,8 @@ public class SerializdApiClient : ISerializdService
         // So a written review must be a log; a bare rating stays a rating (no diary entry).
         var hasText = !string.IsNullOrWhiteSpace(reviewText);
 
-        var payload = new Dictionary<string, object?>
-        {
-            ["show_id"] = showTmdbId,
-            ["season_id"] = null,
-            ["episode_number"] = null,
-            ["review_text"] = reviewText ?? string.Empty,
-            ["contains_spoiler"] = containsSpoiler,
-            ["backdate"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-            ["is_log"] = hasText,
-            ["is_rewatch"] = false,
-            ["tags"] = Array.Empty<string>(),
-            ["allows_comments"] = true,
-            ["like"] = false,
-            // rating is required by /show/reviews/add (omitting it 500s); 0 = unrated.
-            ["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0,
-        };
+        var payload = ReviewPayload(showTmdbId, seasonId: null, episodeNumber: null, reviewText ?? string.Empty,
+            containsSpoiler, DateTime.UtcNow, isLog: hasText, isRewatch: false, like: false, rating);
 
         var body = JsonSerializer.Serialize(payload);
         using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
@@ -440,21 +431,8 @@ public class SerializdApiClient : ISerializdService
         // Same rule as the show review: review_text only persists on a log (is_log:true). Attaching
         // season_id + episode_number scopes it to the episode instead of the whole show.
         var hasText = !string.IsNullOrWhiteSpace(reviewText);
-        var payload = new Dictionary<string, object?>
-        {
-            ["show_id"] = showTmdbId,
-            ["season_id"] = seasonId.Value,
-            ["episode_number"] = episodeNumber,
-            ["review_text"] = reviewText ?? string.Empty,
-            ["contains_spoiler"] = containsSpoiler,
-            ["backdate"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-            ["is_log"] = hasText,
-            ["is_rewatch"] = false,
-            ["tags"] = Array.Empty<string>(),
-            ["allows_comments"] = true,
-            ["like"] = false,
-            ["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0,
-        };
+        var payload = ReviewPayload(showTmdbId, seasonId.Value, episodeNumber, reviewText ?? string.Empty,
+            containsSpoiler, DateTime.UtcNow, isLog: hasText, isRewatch: false, like: false, rating);
 
         var body = JsonSerializer.Serialize(payload);
         using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
@@ -471,25 +449,8 @@ public class SerializdApiClient : ISerializdService
     public async Task SetShowMetaAsync(int showTmdbId, int? rating, bool like)
     {
         // Whole-show entry, is_log:false so it's a rating/like rather than a Diary row.
-        // season_id/episode_number are sent as null (the API requires the keys present).
-        var payload = new Dictionary<string, object?>
-        {
-            ["show_id"] = showTmdbId,
-            ["season_id"] = null,
-            ["episode_number"] = null,
-            ["review_text"] = string.Empty,
-            ["contains_spoiler"] = false,
-            ["backdate"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-            ["is_log"] = false,
-            ["is_rewatch"] = false,
-            ["tags"] = Array.Empty<string>(),
-            ["allows_comments"] = true,
-            ["like"] = like,
-        };
-        // rating is required by /show/reviews/add (omitting it returns HTTP 500); 0 = unrated.
-        payload["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0;
-
-        var body = JsonSerializer.Serialize(payload);
+        var body = JsonSerializer.Serialize(ReviewPayload(showTmdbId, seasonId: null, episodeNumber: null,
+            string.Empty, containsSpoiler: false, DateTime.UtcNow, isLog: false, isRewatch: false, like, rating));
         using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
