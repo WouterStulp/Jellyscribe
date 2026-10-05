@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.10.0.0",
+        "changelog": "Clicking Jellyscribe used to reload the whole Jellyfin web app and drop you onto a plugin settings page. It now opens as a proper page inside Jellyfin, the way Jellyfin Enhanced's Bookmarks does: no reload, Jellyfin's header and menu stay put, and the back button takes you straight back to where you were. You can also bookmark it, since it has its own address ending in #/jellyscribe. On Jellyfin 12, where the sidebar was replaced by a menu under your profile picture, Jellyscribe now appears in that menu, so it is reachable there for the first time. Everything on the page works as before, and the old settings-page address still works.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.10.0/jellyfin-plugin-letterboxd-v2.10.0.zip",
+        "checksum": "4a423985f6bc2ccc4214b7e1bbf9fd7f",
+        "timestamp": "2026-10-05T06:18:38Z"
+      },
+      {
         "version": "2.9.0.0",
         "changelog": "The Jellyscribe link in Jellyfin's sidebar used to appear only if you had also installed the File Transformation plugin, so many people never saw it and had to dig through the dashboard to find their settings. Jellyscribe now adds the link itself, the same way Jellyfin Enhanced adds its own menu, and nothing on your server's disk is changed. If you already use File Transformation, nothing changes for you and you still get exactly one link. The link also now works on servers that run Jellyfin under a sub-path such as /jellyfin, where it used to point at the wrong address. On Jellyfin 12, the web client moved its menu into the profile button, so the link doesn't show there yet; open Jellyscribe from Dashboard, Plugins instead.",
         "targetAbi": "10.11.9.0",
