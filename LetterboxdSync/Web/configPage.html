@@ -21,14 +21,6 @@
                 #letterboxdSyncConfigPage .ws-toggle::after { content:""; position:absolute; width:14px; height:14px; border-radius:50%; background: var(--ws-muted); top:2px; left:2px; transition:.16s; }
                 #letterboxdSyncConfigPage .ws-toggle.on { background: var(--ws-primary); border-color: var(--ws-primary); }
                 #letterboxdSyncConfigPage .ws-toggle.on::after { left: 16px; background: #fff; }
-                #letterboxdSyncConfigPage .ws-modal.wide { max-width: 760px; }
-                #letterboxdSyncConfigPage .ws-modal .ws-logs { max-height: 52vh; margin: 0 0 14px; background: var(--ws-surface-2); border: 1px solid var(--ws-border); border-radius: 10px; }
-                #letterboxdSyncConfigPage .ws-notice { border: 1px solid var(--ws-border-strong); border-left: 3px solid var(--ws-primary); border-radius: var(--ws-r); background: var(--ws-surface); padding: 14px 16px; margin: 0 0 14px; font-size: 13px; }
-                #letterboxdSyncConfigPage .ws-notice p { margin: 4px 0 10px; color: var(--ws-muted); font-size: 12.5px; }
-                #letterboxdSyncConfigPage .ws-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-                #letterboxdSyncConfigPage .ws-bundle-info { margin: 0 0 10px; font-size: 12.5px; color: var(--ws-muted); }
-                #letterboxdSyncConfigPage .ws-bundle-info ul { margin: 6px 0; padding-left: 18px; }
-                #letterboxdSyncConfigPage .ws-bundle-info li { margin: 3px 0; }
                 #letterboxdSyncConfigPage .ws-logs { font-family: var(--ws-mono); font-size: 12px; line-height: 1.6; color: var(--ws-muted); white-space: pre-wrap; word-break: break-word; padding: 16px; max-height: 60vh; overflow: auto; }
                 </style>
 
@@ -60,11 +52,6 @@
                                     <button type="button" class="ws-btn" id="runWatchlistBtn">Sync all watchlists</button>
                                     <button type="button" class="ws-btn primary" id="runSyncBtn">Sync all now</button>
                                 </div>
-                            </div>
-                            <div class="ws-notice" id="telemetryNotice" role="region" aria-labelledby="telemetryNoticeTitle" hidden>
-                                <b id="telemetryNoticeTitle">Help improve Jellyscribe with anonymous telemetry?</b>
-                                <p>If you turn it on, the server sends a weekly ping with versions, which features are on, usage counts in rough buckets, and how many of each kind of sync error happened that week. When a new kind of error starts, one extra ping goes out straight away (at most one a day). Never titles, usernames, emails or library contents. You can turn it off any time in Integrations.</p>
-                                <div class="ws-actions"><button type="button" class="ws-btn primary" id="telemetryNoticeEnable">Enable</button><button type="button" class="ws-btn" id="telemetryNoticeDismiss">No thanks</button><button type="button" class="ws-btn" id="telemetryNoticePreview">See exactly what is sent</button><span id="telemetryNoticeStatus" role="status" style="font-size:12.5px;"></span></div>
                             </div>
                             <div class="ws-filters" id="ovFilters">
                                 <button type="button" class="ws-chip on" data-f="all">All</button>
@@ -140,31 +127,12 @@
                                 <label class="ws-checks" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;margin:4px 0 12px;"><input type="checkbox" id="autoApproveJellyseerr" /><span>Auto-approve requests created by Jellyscribe<span class="desc" style="display:block;color:var(--ws-faint);font-size:11.5px;">Requests are made as each user's own Seerr account, so Seerr only approves them straight away for users with Auto-Approve. With this on, Jellyscribe approves the rest with this API key so they reach Radarr/Sonarr. Turn it off to review them in Seerr yourself.</span></span></label>
                                 <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testJellyseerrBtn">Test connection</button><span id="jellyseerrTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                             </div>
-                            <div class="ws-panel" style="padding:18px;">
-                                <div class="ws-sect-title" style="margin-top:0;"><h2>Anonymous telemetry</h2><span class="rule"></span></div>
-                                <label class="ws-checks" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;"><input type="checkbox" id="telemetryEnabled" /><span>Send anonymous usage telemetry<span class="desc" style="display:block;color:var(--ws-faint);font-size:11.5px;">A weekly ping: versions, which features are on, usage counts in rough buckets, and how many of each kind of sync error happened that week. When a new kind of error starts, one extra ping goes out straight away (at most one a day). Never titles, usernames, emails or library contents. Off by default.</span></span></label>
-                                <p class="ws-muted" style="font-size:12.5px;margin:12px 0 10px;">Instance ID <span class="ws-mono" id="telemetryId">none yet</span>. It is random, and it is the only thing that ties this server's pings together.</p>
-                                <div class="ws-actions"><button type="button" class="ws-btn" id="telemetryPreviewBtn">Preview</button><button type="button" class="ws-btn" id="telemetryRegenBtn">Regenerate ID</button><span id="telemetryStatus" role="status" style="font-size:12.5px;"></span></div>
-                                <div id="telemetryRegenConfirm" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid var(--ws-border-strong);border-radius:8px;font-size:12.5px;align-items:center;gap:10px;flex-wrap:wrap;"><span>Give this server a new ID? Pings from now on carry only the new one. What was already sent stays under the old ID, no longer linked to this server.</span><span style="margin-left:auto;display:flex;gap:8px;"><button type="button" class="ws-btn primary" id="telemetryRegenYes">Regenerate</button><button type="button" class="ws-btn" id="telemetryRegenNo">Keep it</button></span></div>
-                            </div>
                         </section>
 
                         <!-- LOGS -->
                         <section class="ws-view" data-sec="logs">
                             <div class="ws-head"><div><h1>Logs</h1><p>Recent plugin log lines. Passwords, cookies and tokens are never logged, and email addresses are masked.</p></div>
-                                <div style="display:flex;gap:8px;"><button type="button" class="ws-btn" id="logsRefreshBtn">Refresh</button><button type="button" class="ws-btn primary" id="sendLogsBtn">Send to developer</button></div></div>
-                            <div id="sendLogsBox" style="display:none;background:var(--ws-surface);border:1px solid var(--ws-border);border-radius:10px;padding:14px;margin-bottom:14px;">
-                                <div class="ws-bundle-info">This uploads a diagnostic bundle so the developer can look into a problem. Unlike anonymous telemetry, it is <b>not anonymous</b>. It holds:
-                                    <ul>
-                                        <li>up to the last 500 Jellyscribe log lines from the server's two newest log files, like the ones below. They name <b>films, shows, Jellyfin users and Letterboxd usernames</b>, and can quote error messages from Letterboxd, Serializd and Seerr. Email addresses are replaced with [email]; passwords, cookies and tokens are never logged.</li>
-                                        <li>the plugin and Jellyfin versions, and which log files were read</li>
-                                        <li>the telemetry snapshot that Integrations › Preview shows, and this server's telemetry ID (if it has none, a one-off ID kept until the server restarts), so the bundle is tied to this server</li>
-                                        <li>your note, if you write one</li>
-                                    </ul>
-                                    It is stored privately for 90 days. You get a reference code to quote in a bug report. Nothing is sent until you click Send bundle.</div>
-                                <input type="text" class="ws-input" id="sendLogsNote" aria-label="Note for the developer" placeholder="Optional: what went wrong?" style="margin-bottom:10px;" />
-                                <div class="ws-actions"><button type="button" class="ws-btn primary" id="sendLogsConfirm">Send bundle</button><button type="button" class="ws-btn" id="sendLogsPreview">Preview</button><button type="button" class="ws-btn" id="sendLogsCancel">Cancel</button><span id="sendLogsStatus" role="status" style="font-size:12.5px;"></span></div>
-                            </div>
+                                <div style="display:flex;gap:8px;"><button type="button" class="ws-btn" id="logsRefreshBtn">Refresh</button></div></div>
                             <div class="ws-panel"><pre class="ws-logs" id="logsOutput">Loading…</pre></div>
                         </section>
                     </main>
@@ -201,25 +169,6 @@
                     </div>
                     <div id="mConfirmRow" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid var(--ws-crit);border-radius:8px;font-size:12.5px;align-items:center;gap:10px;flex-wrap:wrap;"><span>Remove this account? Jellyscribe stops syncing to it. Nothing on the diary itself is deleted.</span><span style="margin-left:auto;display:flex;gap:8px;"><button type="button" class="ws-btn danger" id="mConfirmRemoveBtn">Yes, remove</button><button type="button" class="ws-btn" id="mConfirmKeepBtn">Keep it</button></span></div>
                     <div id="mStatus" style="font-size:12.5px;margin-top:8px;"></div>
-                </div></dialog>
-
-                <!-- TELEMETRY PREVIEW -->
-                <dialog class="ws-modal-ov" id="telemetryModal" aria-labelledby="telemetryModalTitle"><div class="ws-modal wide">
-                    <button type="button" class="ws-modal-x" aria-label="Close">&times;</button>
-                    <h3 id="telemetryModalTitle">What telemetry sends</h3>
-                    <p class="ws-muted" style="font-size:12.5px;margin:0 0 8px;">The exact JSON the next weekly ping would send, spaced out for reading. An error ping has the same fields with ping_type "error_transition". Nothing is sent while telemetry is off.</p>
-                    <p class="ws-muted" style="font-size:12.5px;margin:0 0 12px;">It includes this server's instance ID. Pasted somewhere public, such as a GitHub issue, that ID links to this server's past pings, so use Copy + regenerate ID: it copies the JSON, then gives the server a new ID.</p>
-                    <pre class="ws-logs" id="telemetryJson" tabindex="0" aria-label="Telemetry payload">Loading…</pre>
-                    <div class="ws-actions"><button type="button" class="ws-btn" id="telemetryCopyBtn">Copy</button><button type="button" class="ws-btn" id="telemetryCopyRegenBtn">Copy + regenerate ID</button><button type="button" class="ws-btn" id="telemetryCloseBtn">Close</button><span id="telemetryModalStatus" role="status" style="font-size:12.5px;"></span></div>
-                </div></dialog>
-
-                <!-- LOG BUNDLE PREVIEW -->
-                <dialog class="ws-modal-ov" id="logsPreviewModal" aria-labelledby="logsPreviewTitle"><div class="ws-modal wide">
-                    <button type="button" class="ws-modal-x" aria-label="Close">&times;</button>
-                    <h3 id="logsPreviewTitle">What the log bundle sends</h3>
-                    <p class="ws-muted" style="font-size:12.5px;margin:0 0 12px;">The exact bundle Send bundle would upload right now, including your note. Nothing has been sent.</p>
-                    <pre class="ws-logs" id="logsPreviewJson" tabindex="0" aria-label="Log bundle">Loading…</pre>
-                    <div class="ws-actions"><button type="button" class="ws-btn" id="logsPreviewCloseBtn">Close</button><span id="logsPreviewStatus" role="status" style="font-size:12.5px;"></span></div>
                 </div></dialog>
 
                 <!-- REVIEW MODAL -->
@@ -264,7 +213,7 @@
                         editing: null,
                         libraries: null,
                         noActivityText: 'No activity yet. Run a sync to get started.', overviewWhat: 'activity',
-                        retryable: ['loadConfig', 'loadOverview', 'loadActivity', 'loadTelemetryPreview', 'loadLogsPreview'],
+                        retryable: ['loadConfig', 'loadOverview', 'loadActivity'],
                         historyBodies: ['historyBody', 'actBody'],
                         getJson: function (path) { return ApiClient.getJSON(ApiClient.getUrl(path)); },
                         // Any HTTP reply resolves (ApiClient.ajax rejects one that is not 2xx); only a server
@@ -307,27 +256,6 @@
                                 var edit = e.target.closest('[data-edit-svc]');
                                 if (edit) self.openAccount({ svc: edit.getAttribute('data-edit-svc'), user: edit.getAttribute('data-edit-user'), id: edit.getAttribute('data-edit-id') });
                             });
-                            byId('sendLogsBtn').addEventListener('click', function () { byId('sendLogsBox').style.display = 'block'; });
-                            byId('sendLogsCancel').addEventListener('click', function () { byId('sendLogsBox').style.display = 'none'; });
-                            byId('sendLogsConfirm').addEventListener('click', function () { self.sendLogs(); });
-                            byId('sendLogsPreview').addEventListener('click', function () { self.openModal('logsPreviewModal'); self.loadLogsPreview(); });
-                            byId('logsPreviewCloseBtn').addEventListener('click', function () { self.closeModal('logsPreviewModal'); });
-                            byId('telemetryNoticeEnable').addEventListener('click', function () { self.answerTelemetryNotice(true); });
-                            byId('telemetryNoticeDismiss').addEventListener('click', function () { self.answerTelemetryNotice(false); });
-                            byId('telemetryNoticePreview').addEventListener('click', function () { self.openTelemetryPreview(); });
-                            byId('telemetryPreviewBtn').addEventListener('click', function () { self.openTelemetryPreview(); });
-                            byId('telemetryCloseBtn').addEventListener('click', function () { self.closeModal('telemetryModal'); });
-                            byId('telemetryCopyBtn').addEventListener('click', function () { self.copyTelemetry(false); });
-                            byId('telemetryCopyRegenBtn').addEventListener('click', function () { self.copyTelemetry(true); });
-                            byId('telemetryRegenBtn').addEventListener('click', function () { self.confirmRegenerate(true); });
-                            byId('telemetryRegenNo').addEventListener('click', function () { self.confirmRegenerate(false); });
-                            byId('telemetryRegenYes').addEventListener('click', function () {
-                                var st = byId('telemetryStatus');
-                                self.confirmRegenerate(false);
-                                st.innerHTML = '<span class="ws-muted">Regenerating…</span>';
-                                self.regenerateTelemetryId().then(function () { st.innerHTML = '<span class="ws-green">New ID saved.</span>'; },
-                                    function (err) { self.saveFailed(err, 'telemetryStatus', 'Could not regenerate the ID'); });
-                            });
                         },
                         loadConfig: function () {
                             var self = this;
@@ -355,8 +283,6 @@
                                     // Default on: older configs predate the field, and the option exists
                                     // because pending requests never reach Radarr/Sonarr.
                                     byId('autoApproveJellyseerr').checked = c.AutoApproveJellyseerrRequests !== false;
-                                    byId('telemetryEnabled').checked = !!(c.Telemetry && c.Telemetry.Enabled);
-                                    self.renderTelemetry(c);
                                 }).catch(function () {
                                     byId('acctGroups').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('accounts', 'loadConfig') + '</div>';
                                 });
@@ -623,7 +549,7 @@
 
                         // Where each dialog gives focus back when it closes (openModal, in jellyscribe.js).
                         returnFocus: {},
-                        modalIds: ['acctModal', 'reviewModal', 'telemetryModal', 'logsPreviewModal'],
+                        modalIds: ['acctModal', 'reviewModal'],
                         // Show the "Post as" row only when the current Jellyfin user has more than
                         // one enabled Letterboxd account. Leaving the empty first option selected
                         // fans out to every linked account; picking one limits the post to it.
@@ -650,15 +576,14 @@
                             var btn = g('saveIntegrationsBtn'), st = g('integrationsStatus');
                             btn.disabled = true;
                             st.textContent = 'Saving…';
-                            // saveConfig edits a copy, so a failed save leaves the loaded config (Seerr fields and
-                            // the telemetry switch) as it was and a later account save cannot send the unsaved values.
+                            // saveConfig edits a copy, so a failed save leaves the loaded config (the Seerr fields)
+                            // as it was and a later account save cannot send the unsaved values.
                             self.saveConfig(function (c) {
                                 c.JellyseerrUrl = g('jellyseerrUrl').value.trim() || null;
                                 // Blank keeps the saved key (the server never sends it back); typing replaces it.
                                 c.JellyseerrApiKey = g('jellyseerrApiKey').value.trim() || null;
                                 c.ClearJellyseerrApiKey = !c.JellyseerrApiKey && g('jellyseerrApiKeyClear').checked;
                                 c.AutoApproveJellyseerrRequests = g('autoApproveJellyseerr').checked;
-                                c.Telemetry = Object.assign({}, c.Telemetry, { Enabled: g('telemetryEnabled').checked });
                             }).then(function () {
                                 btn.disabled = false;
                                 st.innerHTML = '<span class="ws-green">Saved</span>';
@@ -688,111 +613,6 @@
                                         : (d.error ? 'Error: ' + d.error : 'No recent log lines.');
                                 }); })
                                 .catch(function () { byId('logsOutput').textContent = 'Could not load logs.'; });
-                        },
-                        /* ===== Telemetry: opt-in notice, preview, regenerate ===== */
-                        renderTelemetry: function (c) {
-                            var t = (c && c.Telemetry) || {};
-                            byId('telemetryId').textContent = t.InstanceId || 'none yet';
-                            // Shown once: until the admin answers it (Enable or No thanks) or turns telemetry on.
-                            byId('telemetryNotice').hidden = !!(t.Enabled || t.BannerDismissed);
-                        },
-                        answerTelemetryNotice: function (enable) {
-                            var self = this, st = byId('telemetryNoticeStatus');
-                            root.querySelectorAll('#telemetryNotice button').forEach(function (b) { b.disabled = true; });
-                            st.innerHTML = '<span class="ws-muted">Saving…</span>';
-                            self.saveConfig(function (c) {
-                                c.Telemetry = Object.assign({}, c.Telemetry, { BannerDismissed: true }, enable ? { Enabled: true } : {});
-                            }).then(function () {
-                                byId('telemetryEnabled').checked = !!(self.config.Telemetry && self.config.Telemetry.Enabled);
-                                self.renderTelemetry(self.config);
-                            }, function (err) {
-                                root.querySelectorAll('#telemetryNotice button').forEach(function (b) { b.disabled = false; });
-                                self.saveFailed(err, 'telemetryNoticeStatus', 'Could not save');
-                            });
-                        },
-                        openTelemetryPreview: function () {
-                            this.openModal('telemetryModal');
-                            this.loadTelemetryPreview();
-                        },
-                        loadTelemetryPreview: function () {
-                            var self = this, pre = byId('telemetryJson'), st = byId('telemetryModalStatus');
-                            self.telemetryRaw = null;
-                            pre.textContent = 'Loading…';
-                            st.textContent = '';
-                            return ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Telemetry/Preview'), type: 'GET' })
-                                .then(function (r) { return r.text(); })
-                                .then(function (text) {
-                                    // Copy takes the JSON exactly as it would be sent; the dialog spaces it out for reading.
-                                    self.telemetryRaw = text;
-                                    try { pre.textContent = JSON.stringify(JSON.parse(text), null, 2); } catch (e) { pre.textContent = text; }
-                                }, function () {
-                                    pre.textContent = '';
-                                    st.innerHTML = self.errorHtml('the preview', 'loadTelemetryPreview');
-                                });
-                        },
-                        loadLogsPreview: function () {
-                            var self = this, pre = byId('logsPreviewJson'), st = byId('logsPreviewStatus');
-                            var note = byId('sendLogsNote').value || '';
-                            pre.textContent = 'Loading…';
-                            st.textContent = '';
-                            // A POST, so the note stays out of request URLs (and the logs that keep them).
-                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Telemetry/PreviewLogs'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ Note: note || null }) })
-                                .then(function (r) { return r.text(); })
-                                .then(function (text) { pre.textContent = text; }, function () {
-                                    pre.textContent = '';
-                                    st.innerHTML = self.errorHtml('the preview', 'loadLogsPreview');
-                                });
-                        },
-                        // Clipboard API where the page is a secure context; otherwise (plain http on a LAN) a selected
-                        // textarea and execCommand. The textarea goes inside the open dialog: the page behind is inert.
-                        copyText: function (text, within) {
-                            if (navigator.clipboard && window.isSecureContext)
-                                return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return false; });
-                            var ta = document.createElement('textarea');
-                            ta.value = text;
-                            ta.setAttribute('readonly', '');
-                            ta.style.position = 'fixed'; ta.style.opacity = '0';
-                            within.appendChild(ta);
-                            ta.select();
-                            var ok = false;
-                            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-                            within.removeChild(ta);
-                            return Promise.resolve(ok);
-                        },
-                        copyTelemetry: function (andRegenerate) {
-                            var self = this, st = byId('telemetryModalStatus');
-                            if (!self.telemetryRaw) { st.innerHTML = '<span class="ws-red">Nothing to copy yet.</span>'; return; }
-                            self.copyText(self.telemetryRaw, root.querySelector('#telemetryModal .ws-modal')).then(function (ok) {
-                                if (!ok) { st.innerHTML = '<span class="ws-red">Could not copy. Select the text and copy it yourself.</span>'; return; }
-                                if (!andRegenerate) { st.innerHTML = '<span class="ws-green">Copied.</span>'; return; }
-                                st.innerHTML = '<span class="ws-muted">Copied. Regenerating…</span>';
-                                self.regenerateTelemetryId().then(function () {
-                                    return self.loadTelemetryPreview();
-                                }).then(function () {
-                                    if (self.telemetryRaw) st.innerHTML = '<span class="ws-green">Copied. This server now has a new ID, shown above.</span>';
-                                }, function (err) { self.saveFailed(err, 'telemetryModalStatus', 'Copied, but the ID was not regenerated'); });
-                            });
-                        },
-                        confirmRegenerate: function (show) {
-                            byId('telemetryRegenConfirm').style.display = show ? 'flex' : 'none';
-                            byId('telemetryRegenBtn').style.display = show ? 'none' : '';
-                            byId('telemetryStatus').textContent = '';
-                        },
-                        regenerateTelemetryId: function () {
-                            var self = this;
-                            return ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Telemetry/RegenerateId'), type: 'POST' })
-                                .then(function (r) { return r.json(); })
-                                .then(function (d) {
-                                    if (self.config) self.config.Telemetry = Object.assign({}, self.config.Telemetry, { InstanceId: d.instanceId });
-                                    byId('telemetryId').textContent = d.instanceId || 'none yet';
-                                });
-                        },
-                        sendLogs: function () {
-                            var st = byId('sendLogsStatus'); st.innerHTML = '<span class="ws-muted">Sending…</span>';
-                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Telemetry/SendLogs'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ Note: byId('sendLogsNote').value || null }) })
-                                .then(function (r) { r.json().then(function (d) {
-                                    st.innerHTML = '<span class="ws-green">Sent. Reference <b class="ws-mono">' + WS.escAttr(d.refCode) + '</b></span>' + (d.warning ? ' <span class="ws-muted">— ' + WS.escAttr(d.warning) + '</span>' : '');
-                                }); }, function () { st.innerHTML = '<span class="ws-red">Send failed. Try Refresh first, then resend.</span>'; });
                         }
                     };
                     /* Loads this build's shared stylesheet and script (jellyscribe.css and jellyscribe.js), then
