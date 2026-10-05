@@ -261,8 +261,20 @@ public class SerializdSyncRunner
             .Where(r => !AlreadyLogged(r) && seenLog.Add((r.Show, r.Season, r.Episode)))
             .ToList();
 
-        bool Finished(int show) => SerializdShowStatus.FinishedReader(seriesById.GetValueOrDefault(show),
-            ep => _userDataManager.GetUserData(user, ep)?.Played == true);
+        // Walks every episode of the show, so it runs at most once per show per run.
+        var finishedByShow = new Dictionary<int, bool>();
+        bool Finished(int show)
+        {
+            if (!finishedByShow.TryGetValue(show, out var finished))
+            {
+                finished = SerializdShowStatus.FinishedReader(seriesById.GetValueOrDefault(show),
+                    ep => _userDataManager.GetUserData(user, ep)?.Played == true);
+                finishedByShow[show] = finished;
+            }
+
+            return finished;
+        }
+
         var statusPending = records.Select(r => r.Show).Distinct()
             .Any(show => SerializdShowStatus.IsPending(userId, account.Email, show, () => Finished(show)));
 
@@ -377,11 +389,11 @@ public class SerializdSyncRunner
 
         // 3. Show-level rating + favorite (like) sync, one entry per rated/favorited series
         //    among the shows we're tracking. is_log:false so it doesn't clutter the Diary.
-        await SyncShowMetaAsync(user, userId, records, seriesById, account, service, cancellationToken).ConfigureAwait(false);
+        await SyncShowMetaAsync(user, userId, records, seriesById, Finished, account, service, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task SyncShowMetaAsync(User user, string userId, List<EpisodePlay> records,
-        Dictionary<int, Series> seriesById, SerializdAccount account, ISerializdService service,
+        Dictionary<int, Series> seriesById, Func<int, bool> finished, SerializdAccount account, ISerializdService service,
         CancellationToken cancellationToken)
     {
         var watchedShows = new HashSet<int>();
@@ -396,8 +408,7 @@ public class SerializdSyncRunner
             try
             {
                 if (await SerializdShowStatus.MarkCurrentlyWatchingAsync(service, userId, account.Email, tmdb,
-                        () => SerializdShowStatus.FinishedReader(seriesById.GetValueOrDefault(tmdb),
-                            ep => _userDataManager.GetUserData(user, ep)?.Played == true))
+                        () => finished(tmdb))
                     .ConfigureAwait(false))
                     _logger.LogInformation("Serializd: marked TMDb {Show} as currently watching for {Username}", tmdb, user.Username);
             }
