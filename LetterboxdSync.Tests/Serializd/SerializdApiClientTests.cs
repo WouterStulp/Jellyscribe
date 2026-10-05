@@ -205,6 +205,42 @@ public class SerializdApiClientTests
     }
 
     [Fact]
+    public async Task SetCurrentlyWatching_PostsTheShowId()
+    {
+        string path = string.Empty;
+        string body = string.Empty;
+        var handler = new ApiMockHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
+            path = req.RequestUri.AbsolutePath;
+            body = ReadBody(req);
+            return Json(HttpStatusCode.OK, "{}");
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+        await client.SetCurrentlyWatchingAsync(73223);
+
+        Assert.EndsWith("/currently_watching", path);
+        Assert.Equal("{\"show_id\":73223}", body);
+    }
+
+    [Fact]
+    public async Task SetCurrentlyWatching_FailureThrows()
+    {
+        var handler = new ApiMockHandler(req => req.RequestUri!.AbsolutePath.EndsWith("/login")
+            ? Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}")
+            : Json(HttpStatusCode.BadRequest, "{\"message\":\"nope\"}"));
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        var ex = await Assert.ThrowsAsync<Exception>(() => client.SetCurrentlyWatchingAsync(73223));
+        Assert.Contains("400", ex.Message);
+    }
+
+    [Fact]
     public async Task GetWatchlist_ParsesShowsAndResolvesWatchlistedSeasonNumbers()
     {
         var handler = new ApiMockHandler(req =>

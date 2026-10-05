@@ -463,6 +463,17 @@ public class SerializdApiClient : ISerializdService
         }
     }
 
+    public async Task SetCurrentlyWatchingAsync(int showTmdbId)
+    {
+        var body = JsonSerializer.Serialize(new Dictionary<string, object> { ["show_id"] = showTmdbId });
+        using var resp = await SendAsync(HttpMethod.Post, "/currently_watching", body).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            throw new Exception($"Serializd currently-watching ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
+        }
+    }
+
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path,
         string? body = null, bool authenticated = true, bool isRetry = false, int attempt = 0)
     {
