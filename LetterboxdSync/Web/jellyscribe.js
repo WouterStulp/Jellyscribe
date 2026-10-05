@@ -58,11 +58,13 @@
 
             esc: function (s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
             escAttr: function (s) { return this.esc(s); },
-            // A short date for the title line on phones, where the When column is hidden.
-            shortDate: function (d) {
-                var opts = { day: 'numeric', month: 'short' };
-                if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-                return d.toLocaleDateString([], opts);
+            // dd-MM-yy, plus HH:mm (24-hour) when withTime; local time.
+            formatDate: function (value, withTime) {
+                var d = new Date(value);
+                if (isNaN(d.getTime())) return '?';
+                var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+                var date = pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getFullYear() % 100);
+                return withTime ? date + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : date;
             },
             // Today in the viewer's own time zone, as yyyy-mm-dd (toISOString would give the UTC date).
             localDate: function () {
@@ -327,10 +329,7 @@
                     byId('historyNext').disabled = (this.ovPage || 0) >= pages - 1;
                 } else { pag.style.display = 'none'; }
             },
-            whenOf: function (e) {
-                var ts = new Date(e.Timestamp);
-                return ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            },
+            whenOf: function (e) { return this.formatDate(e.Timestamp, true); },
             pillHtml: function (status, reason) {
                 status = this.esc(status);
                 if (!reason) return '<span class="ws-pill ' + status + '">' + status + '</span>';
@@ -346,7 +345,7 @@
                 var seM = (source === 'serializd') ? (m || '').match(/S(\d+)E(\d+)/) : null;
                 var btn = (canReview && e.TmdbId) ? '<button type="button" class="ws-review-btn" data-svc="' + self.esc(source) + '" data-tmdb="' + self.esc(e.TmdbId) +
                     '" data-title="' + self.esc(t) + '" data-slug="' + self.esc(e.FilmSlug) + '" data-season="' + (seM ? seM[1] : '') + '" data-episode="' + (seM ? seM[2] : '') + '">Review</button>' : '';
-                return '<tr' + (trAttrs || '') + '><td><div class="ws-titlecell ws-tc"><span class="ws-badge ' + svc + '">' + (svc === 'tv' ? 'TV' : 'MV') + '</span><div><div class="t">' + self.esc(t) + '</div><div class="m">' + self.esc(m) + '<span class="ws-mwhen">' + (m ? ' · ' : '') + self.shortDate(new Date(e.Timestamp)) + '</span></div></div></div></td><td>' + self.pillHtml(status, e.Error) + '</td><td class="ws-src">' + self.esc(e.Source) + '</td><td class="ws-when">' + self.whenOf(e) + '</td><td>' + btn + '</td></tr>';
+                return '<tr' + (trAttrs || '') + '><td><div class="ws-titlecell ws-tc"><span class="ws-badge ' + svc + '">' + (svc === 'tv' ? 'TV' : 'MV') + '</span><div><div class="t">' + self.esc(t) + '</div><div class="m">' + self.esc(m) + '<span class="ws-mwhen">' + (m ? ' · ' : '') + self.whenOf(e) + '</span></div></div></div></td><td>' + self.pillHtml(status, e.Error) + '</td><td class="ws-src">' + self.esc(e.Source) + '</td><td class="ws-when">' + self.whenOf(e) + '</td><td>' + btn + '</td></tr>';
             },
             // Consecutive episodes of one show collapse into one expandable row, so a binge
             // doesn't push everything else off the page. A run of one stays a plain row.
@@ -383,7 +382,7 @@
                 var failed = u.events.filter(function (e) { return self.statusOf(e) === 'Failed'; }).length;
                 var pill = statuses.length === 1 ? self.pillHtml(statuses[0]) : (failed ? '<span class="ws-pill Failed">' + failed + ' failed</span>' : '<span class="ws-pill Skipped">Mixed</span>');
                 return '<tr class="ws-grp"><td><button type="button" class="ws-grp-btn ws-tc" data-grp="' + id + '" aria-expanded="false"><span class="ws-badge tv">TV</span><div><div class="t">' + self.esc(u.show) +
-                    ' <span class="ws-grp-caret" aria-hidden="true">▸</span></div><div class="m">' + u.events.length + ' episodes · ' + self.esc(range) + '<span class="ws-mwhen"> · ' + self.shortDate(new Date(newest.Timestamp)) + '</span></div></div></button></td><td>' + pill +
+                    ' <span class="ws-grp-caret" aria-hidden="true">▸</span></div><div class="m">' + u.events.length + ' episodes · ' + self.esc(range) + '<span class="ws-mwhen"> · ' + self.whenOf(newest) + '</span></div></div></button></td><td>' + pill +
                     '</td><td class="ws-src">' + (sources.length === 1 ? self.esc(sources[0]) : '') + '</td><td class="ws-when">' + self.whenOf(newest) + '</td><td></td></tr>';
             },
             toggleGroup: function (body, btn) {

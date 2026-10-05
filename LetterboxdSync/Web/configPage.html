@@ -276,7 +276,7 @@
                                     ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/AuthBreakers')).then(function (d) {
                                         var map = {};
                                         ((d && d.breakers) || []).forEach(function (b) {
-                                            map[(b.userJellyfinId || '') + '|' + (b.letterboxdUsername || '').toLowerCase()] = b.failingSinceUtc ? String(b.failingSinceUtc).slice(0, 10) : '?';
+                                            map[(b.userJellyfinId || '') + '|' + (b.letterboxdUsername || '').toLowerCase()] = b.failingSinceUtc ? self.formatDate(b.failingSinceUtc) : '?';
                                         });
                                         self.breakers = map;
                                         self.renderAccounts();
