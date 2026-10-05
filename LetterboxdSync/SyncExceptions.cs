@@ -65,7 +65,7 @@ public sealed class LetterboxdApiAuthException : Exception
 }
 
 /// <summary>Serializd answered a request with an error status (after the client's own retries).</summary>
-public sealed class SerializdRequestException : Exception
+public class SerializdRequestException : Exception
 {
     public SerializdRequestException(System.Net.HttpStatusCode statusCode, string message) : base(message)
     {

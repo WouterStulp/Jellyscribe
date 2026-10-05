@@ -150,7 +150,12 @@ public class SerializdApiClient : ISerializdService
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new SerializdRequestException(resp.StatusCode, $"Serializd login failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(err, 200)}");
+            var message = $"Serializd login failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(err, 200)}";
+            // 401/403 is Serializd rejecting the credentials; anything else (5xx after the
+            // cold-start retries) never reads as a bad login.
+            if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                throw new SerializdAuthException(message, resp.StatusCode);
+            throw new SerializdRequestException(resp.StatusCode, message);
         }
 
         var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);

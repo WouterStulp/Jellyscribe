@@ -103,7 +103,7 @@ public class SerializdApiClientTests
             Json(HttpStatusCode.Unauthorized, "{\"message\":\"Incorrect password.\"}"));
 
         using var client = new SerializdApiClient(Log, handler);
-        var ex = await Assert.ThrowsAsync<SerializdRequestException>(() => client.AuthenticateAsync("me@example.com", "wrong"));
+        var ex = await Assert.ThrowsAsync<SerializdAuthException>(() => client.AuthenticateAsync("me@example.com", "wrong"));
         Assert.Contains("401", ex.Message);
     }
 
