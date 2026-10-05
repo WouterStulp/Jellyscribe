@@ -5,8 +5,6 @@
 
 > **This is a standalone fork** of [builtbyproxy/Jellyscribe](https://github.com/builtbyproxy/Jellyscribe), built and released from this repository. It tracks upstream and adds changes of its own (see [What this fork adds](#what-this-fork-adds)). Upstream's [website](https://jellyscribe.dev/) and [release notes](https://jellyscribe.dev/releases/) describe the upstream plugin, not this fork.
 
-- **Built with AI:** most of this plugin is AI-written, human-reviewed, [full transparency in AI.md](AI.md)
-
 Automatically sync your Jellyfin watch history to your Letterboxd diary (films) and Serializd diary (TV). Titles are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
 
 Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`) and Serializd's API.
@@ -177,7 +175,7 @@ docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:9.0 dotnet b
 
 ## Releasing
 
-Versions are the upstream version plus a fourth number (`2.10.0` → `2.10.0.1`). Bump `AssemblyVersion`/`FileVersion` in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj` on `main`, then run `fork/release.sh "<changelog>"`. It runs the tests, publishes the GitHub release, and adds the version to `fork/manifest.json`. GitHub Actions are disabled on this fork, so upstream's release workflows never run here.
+Versions are the upstream version plus a fourth number (`2.10.0` → `2.10.0.1`). A PR that ships to users bumps `AssemblyVersion`/`FileVersion` in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj` and fills in its `## Release notes` section. When it's merged, `release.yml` runs `fork/release.sh`, which tests, publishes the GitHub release and adds the version to `fork/manifest.json`. `fork/release.sh "<changelog>"` also works by hand.
 
 ## Contributing
 
