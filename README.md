@@ -1,17 +1,10 @@
-# [Jellyscribe](https://jellyscribe.dev/)
+# Jellyscribe (WouterStulp fork)
 
-[![CI](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/ci.yml/badge.svg)](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/ci.yml)
-[![Release](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/release.yml/badge.svg)](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/release.yml)
-[![codecov](https://codecov.io/gh/builtbyproxy/Jellyscribe/branch/main/graph/badge.svg)](https://codecov.io/gh/builtbyproxy/Jellyscribe)
-[![GitHub release](https://img.shields.io/github/v/release/builtbyproxy/Jellyscribe)](https://github.com/builtbyproxy/Jellyscribe/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/WouterStulp/Jellyscribe)](https://github.com/WouterStulp/Jellyscribe/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Downloads](https://img.shields.io/github/downloads/builtbyproxy/Jellyscribe/total)](https://github.com/builtbyproxy/Jellyscribe/releases)
-[![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/builtbyproxy/Jellyscribe)
 
-> **Formerly LetterboxdSync.** Renamed to Jellyscribe now that it syncs TV shows (via Serializd) alongside films (via Letterboxd), not just Letterboxd. Existing installs update in place automatically, no action needed.
+> **This is a standalone fork** of [builtbyproxy/Jellyscribe](https://github.com/builtbyproxy/Jellyscribe), built and released from this repository. It tracks upstream and adds changes of its own (see [What this fork adds](#what-this-fork-adds)). Upstream's [website](https://jellyscribe.dev/) and [release notes](https://jellyscribe.dev/releases/) describe the upstream plugin, not this fork.
 
-- **Website:** [jellyscribe.dev](https://jellyscribe.dev/)
-- **What's new:** [release notes for every version](https://jellyscribe.dev/releases/)
 - **Built with AI:** most of this plugin is AI-written, human-reviewed, [full transparency in AI.md](AI.md)
 
 Automatically sync your Jellyfin watch history to your Letterboxd diary (films) and Serializd diary (TV). Titles are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
@@ -19,6 +12,10 @@ Automatically sync your Jellyfin watch history to your Letterboxd diary (films) 
 Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`) and Serializd's API.
 
 <img alt="Jellyscribe dashboard inside the Jellyfin admin UI, showing sync stats and recent activity" src="docs/images/dashboard.png" />
+
+## What this fork adds
+
+- **Serializd "Currently watching"**, a show is marked as currently watching on your Serializd profile when you start it in Jellyfin, and left alone once you've finished it
 
 ## Features
 
@@ -69,21 +66,16 @@ Full feature parity with the Letterboxd side: real-time sync, ratings, reviews, 
 
 1. In Jellyfin, go to **Dashboard > Plugins > Repositories**
 2. Add the Jellyscribe repository:
-   - **Name:** `Jellyscribe`
-   - **URL:** `https://lbsync-telemetry.lachlanbyoung.workers.dev/manifest.json`
-3. Go to **Catalog** and install **Jellyscribe**
-4. Restart Jellyfin
-5. Hard-refresh the Jellyfin web UI (Ctrl/Cmd + Shift + R) so the Jellyscribe link appears in the sidebar (Jellyfin 10.11) or the profile menu (Jellyfin 12)
-
-The URL above is an edge-cached mirror of the GitHub manifest that keeps an anonymous install count (see [Install counting](#install-counting-separate-from-the-opt-in-telemetry)). If you prefer not to be counted, use the GitHub manifest instead; it serves the identical catalog and updates arrive the same way:
-
-- **URL:** `https://raw.githubusercontent.com/builtbyproxy/Jellyscribe/main/manifest.json`
-
-The plugin files themselves are still downloaded through the mirror whichever repository you add, and each download is counted; only a [manual install](#manual-install) from GitHub Releases avoids that.
+   - **Name:** `Jellyscribe (WouterStulp fork)`
+   - **URL:** `https://raw.githubusercontent.com/WouterStulp/Jellyscribe/main/fork/manifest.json`
+3. Remove the upstream Jellyscribe repository if you have it (any `lachlanbyoung.workers.dev` or `builtbyproxy` entry). The fork uses the same plugin id, so with both listed Jellyfin picks whichever has the higher version
+4. Go to **Catalog** and install **Jellyscribe**
+5. Restart Jellyfin
+6. Hard-refresh the Jellyfin web UI (Ctrl/Cmd + Shift + R) so the Jellyscribe link appears in the sidebar (Jellyfin 10.11) or the profile menu (Jellyfin 12)
 
 ### Manual install
 
-1. Download the latest Jellyscribe ZIP from [Releases](https://github.com/builtbyproxy/Jellyscribe/releases)
+1. Download the latest Jellyscribe ZIP from [Releases](https://github.com/WouterStulp/Jellyscribe/releases)
 2. Extract `Jellyscribe.dll` and `HtmlAgilityPack.dll` to your Jellyfin plugins directory
 3. Restart Jellyfin
 
@@ -192,14 +184,9 @@ The precise promise, worded carefully:
 
 What it's for: deciding what gets built next based on what people actually use, and an automated canary that compares error rates across releases and files regression issues before bug reports arrive.
 
-### Install counting (separate from the opt-in telemetry)
+### Install counting
 
-The recommended plugin repository URL and the release downloads are served through an edge-cached mirror of the GitHub manifest. The mirror counts each request as a salted, weekly-rotating hash of the caller's IP so the project can estimate how many servers run the plugin. This is a plain traffic count, not the telemetry above: no instance ID, no settings, no versions beyond the release being downloaded. The raw IP is used only to compute the hash and is never written to the database, and the mirror keeps no request logs of its own. The hash mixes in the week and a secret salt, so the stored rows cannot be tied to an IP or linked across weeks by anyone who only sees the data. The salt is fixed, though, so whoever holds it (the maintainer) could hash a known IP and find that IP's rows; treat this as pseudonymous, not anonymous. As with any HTTPS service, the hosting platform itself still sees caller IPs in transit.
-
-To avoid the manifest count, use the GitHub manifest URL (`https://raw.githubusercontent.com/builtbyproxy/Jellyscribe/main/manifest.json`) as your plugin repository instead of the mirror; it serves the identical catalog and is never counted. Plugin updates are still downloaded through the mirror's download link whichever repository you use (that is what the release-download count above measures); a [manual install](#manual-install) from GitHub Releases avoids that too. To switch, check **Dashboard > Plugins > Repositories**:
-
-- **Only one Jellyscribe entry, pointing at `lbsync-telemetry.lachlanbyoung.workers.dev`** (you followed the install steps above): add the GitHub manifest URL first, then delete the mirror entry. Do not just delete the mirror entry, or you will have no Jellyscribe repository left and stop getting updates.
-- **A GitHub entry plus one named "... (mirror)"**: older installs that used the GitHub manifest had the mirror added alongside it once, by v1.19.0 or later. Your GitHub entry was never removed, so you can simply delete the mirror entry; the plugin will not add it again.
+This fork's plugin repository and release downloads are served straight from GitHub, so nothing counts installs. Telemetry and **Send logs to developer** below still go to the upstream project's endpoints; leave telemetry off and don't send logs if you'd rather nothing leaves your server.
 
 ### Send logs to the developer
 
@@ -224,19 +211,24 @@ Unlike the anonymous telemetry above, **logs are not anonymous**: the lines name
 ## Building from source
 
 ```bash
-git clone https://github.com/builtbyproxy/Jellyscribe.git
+git clone https://github.com/WouterStulp/Jellyscribe.git
 cd Jellyscribe
 dotnet build -c Release
 ```
 
-Output `Jellyscribe.dll` is in `LetterboxdSync/bin/Release/net9.0/`.
+Output `Jellyscribe.dll` is in `LetterboxdSync/bin/Release/net9.0/`. Without a local .NET 9 SDK, run the same in a container:
+
+```bash
+docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:9.0 dotnet build -c Release
+```
+
+## Releasing
+
+Versions are the upstream version plus a fourth number (`2.10.0` → `2.10.0.1`). Bump `AssemblyVersion`/`FileVersion` in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj` on `main`, then run `fork/release.sh "<changelog>"`. It runs the tests, publishes the GitHub release, and adds the version to `fork/manifest.json`. GitHub Actions are disabled on this fork, so upstream's release workflows never run here.
 
 ## Contributing
 
-PRs welcome. A few conventions:
-
-- **PR body shape** lives in [`.github/pull_request_template.md`](.github/pull_request_template.md). Symptom first, plain English, six fixed sections: Release notes, What's broken, Why it happens, What this PR does, How to test, and Follow-ups (not in this PR). **Release notes** is the user-facing paragraph that `release.yml` publishes as the release changelog, so fill it in for any change that ships; a PR that only touches non-shipping files (docs, site, tests, CI) can leave it out.
-- **Non-trivial changes** are planned through [`openspec/`](openspec/) before implementation: proposal, design, specs, then tasks. See [`openspec/changes/`](openspec/changes/) for active proposals and the [`archive/`](openspec/changes/archive/) folder for past ones.
+Issues and PRs go to [this repository](https://github.com/WouterStulp/Jellyscribe), not upstream. Changes land on `main` through a PR and ship with the next fork release.
 
 ## License
 
