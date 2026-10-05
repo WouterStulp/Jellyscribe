@@ -203,8 +203,6 @@ public class WatchlistSyncRunner
         catch (Exception ex)
         {
             _logger.LogError("Auth failed for {Username}: {Message}", user.Username, ex.Message);
-            // No SyncEvent is recorded on this early-exit path; hook telemetry directly.
-            TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
             if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
                 await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
             return;
@@ -226,7 +224,6 @@ public class WatchlistSyncRunner
         catch (Exception ex)
         {
             _logger.LogError("Failed to fetch watchlist for {Username}: {Message}", user.Username, ex.Message);
-            TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
             return;
         }
 
@@ -377,11 +374,6 @@ public class WatchlistSyncRunner
                 "Seerr auto-request for {Username} ({Mode}): {Requested} new, {Existing} already on Seerr, {Failed} failed of {Total} considered",
                 user.Username, account.BackfillAvailableRequests ? "backfill" : "unmatched-only",
                 requested, alreadyExists, failed, requestIds.Count);
-
-            // Seerr failures surface as return values, not SyncEvents; count the
-            // batch once (not per film) so one outage doesn't inflate the error counter.
-            if (failed > 0)
-                TelemetryService.RecordError(TelemetryService.CatJellyseerr);
 
             // Anything Seerr already had a request for was skipped above without ever being POSTed,
             // so the approve step attached to request creation never saw it. That leaves requests

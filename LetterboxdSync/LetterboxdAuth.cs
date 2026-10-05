@@ -182,8 +182,7 @@ public class LetterboxdAuth
 
             // Two-factor accounts can never complete this flow: the form posts an empty
             // authenticationCode (line above), so Letterboxd rejects the login. Surface a
-            // specific, actionable message instead of the vague generic error. Keep the
-            // "login error" prefix so TelemetryService.Classify still buckets it as auth.
+            // specific, actionable message instead of the vague generic error.
             if (IsTwoFactorMessage(msg))
                 throw new Exception(
                     "Letterboxd login error: this account has two-factor authentication (2FA) enabled, "
