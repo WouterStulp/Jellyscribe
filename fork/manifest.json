@@ -8,6 +8,14 @@
     "owner": "WouterStulp",
     "versions": [
       {
+        "version": "2.10.0.3",
+        "changelog": "The Jellyscribe pages are easier to read and use: history can be searched, TV episodes are grouped per show, older history can be loaded, errors show up instead of endless loading, account settings are grouped, and the page follows Jellyfin's dark theme on every device. Syncs are quicker and more reliable: scheduled syncs run at fixed times overnight, Serializd's slow wake-ups no longer fail a run, finished shows aren't rechecked every time, and the sync history stays small and can't be lost if Jellyfin stops mid-save. Jellyscribe no longer sends anything to the original author's servers: telemetry, log upload and the install-counting mirror are removed.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/WouterStulp/Jellyscribe/releases/download/v2.10.0.3/jellyscribe-v2.10.0.3.zip",
+        "checksum": "2ec258ccdca2ad0493ca52786007b66a",
+        "timestamp": "2026-10-05T13:26:19Z"
+      },
+      {
         "version": "2.10.0.2",
         "changelog": "Based on Jellyscribe 2.10.0. New: shows you watch are now marked as Currently watching on Serializd the first time an episode is logged, so they appear on your Serializd profile instead of only in the diary. Shows you have already finished in Jellyfin are left alone. Also includes the two fixes from 2.10.0.1: history survives renaming a Jellyfin user, and later anime seasons that Serializd lists as one long season are logged at their running episode number.",
         "targetAbi": "10.11.9.0",
