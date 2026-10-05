@@ -55,6 +55,9 @@ public class SeerrClientTests
         string? approvedPath = null;
         var handler = new SeerrHandler(req =>
         {
+            if (IsUserLookup(req, 7))
+                return JsonResponse(PermittedUser);
+
             if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/movie/100"))
                 return JsonResponse("{\"id\":100}");
 
@@ -147,6 +150,9 @@ public class SeerrClientTests
     {
         var handler = new SeerrHandler(req =>
         {
+            if (IsUserLookup(req, 7))
+                return JsonResponse(PermittedUser);
+
             if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/movie/100"))
                 return JsonResponse("{\"id\":100}");
 
@@ -175,6 +181,9 @@ public class SeerrClientTests
         string? approvedPath = null;
         var handler = new SeerrHandler(req =>
         {
+            if (IsUserLookup(req, 7))
+                return JsonResponse(PermittedUser);
+
             if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.Contains("/api/v1/tv/"))
                 return JsonResponse("{\"id\":200,\"name\":\"Show\"}");
 
@@ -212,6 +221,9 @@ public class SeerrClientTests
         var approvedIds = new List<string>();
         var handler = new SeerrHandler(req =>
         {
+            if (IsUserLookup(req, 7))
+                return JsonResponse(PermittedUser);
+
             if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/request"))
                 return JsonResponse(@"{""results"":[
                     {""id"":501,""status"":1,""type"":""movie"",""requestedBy"":{""id"":7},""media"":{""tmdbId"":9962}},
@@ -247,6 +259,9 @@ public class SeerrClientTests
         var approvedIds = new List<string>();
         var handler = new SeerrHandler(req =>
         {
+            if (IsUserLookup(req, 7))
+                return JsonResponse(PermittedUser);
+
             if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/request"))
                 return JsonResponse(@"{""results"":[
                     {""id"":601,""status"":1,""type"":""movie"",""requestedBy"":{""id"":99},""media"":{""tmdbId"":9962}},
@@ -300,6 +315,197 @@ public class SeerrClientTests
 
         Assert.Equal(0, approved);
         Assert.Equal(0, failed);
+    }
+
+    // ----- Approval gated on the requesting Seerr user's own permissions -----
+    // Seerr's Permission bitmask: ADMIN 2, MANAGE_REQUESTS 16, REQUEST 32, AUTO_APPROVE 128,
+    // AUTO_APPROVE_MOVIE 256, AUTO_APPROVE_TV 512. Approving with the admin key for anyone else
+    // would let any Jellyfin user bypass Seerr's moderation by enabling auto-request.
+
+    private const string PermittedUser = "{\"id\":7,\"permissions\":128}";
+
+    private static bool IsUserLookup(HttpRequestMessage req, int userId)
+        => req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath == $"/api/v1/user/{userId}";
+
+    private sealed class PendingRequestProbe
+    {
+        public int ApproveCalls;
+        public int UserLookups;
+    }
+
+    private static SeerrHandler PendingRequestHandler(PendingRequestProbe probe,
+        Func<HttpResponseMessage> userResponse)
+        => new(req =>
+        {
+            if (IsUserLookup(req, 7))
+            {
+                probe.UserLookups++;
+                return userResponse();
+            }
+
+            if (req.Method == HttpMethod.Get)
+                return JsonResponse("{\"id\":100,\"name\":\"Show\"}");
+
+            if (req.Method == HttpMethod.Post && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/request"))
+                return new HttpResponseMessage(HttpStatusCode.Created)
+                {
+                    Content = new StringContent("{\"id\":42,\"status\":1}", System.Text.Encoding.UTF8, "application/json")
+                };
+
+            if (req.Method == HttpMethod.Post && req.RequestUri!.AbsolutePath.EndsWith("/approve"))
+            {
+                probe.ApproveCalls++;
+                return JsonResponse("{\"id\":42,\"status\":2}");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+    private static async Task RequestAsync(SeerrClient client, string mediaType)
+    {
+        if (mediaType == "tv")
+            await client.RequestSeriesAsync(100, 7, new[] { 1 });
+        else
+            await client.RequestMovieAsync(100, 7);
+    }
+
+    [Theory]
+    [InlineData("movie", 2)]    // ADMIN
+    [InlineData("movie", 16)]   // MANAGE_REQUESTS
+    [InlineData("movie", 128)]  // AUTO_APPROVE
+    [InlineData("movie", 256)]  // AUTO_APPROVE_MOVIE
+    [InlineData("tv", 2)]
+    [InlineData("tv", 16)]
+    [InlineData("tv", 128)]
+    [InlineData("tv", 512)]     // AUTO_APPROVE_TV
+    [InlineData("movie", 32 | 256)]
+    public async Task PendingRequest_UserMayAutoApprove_IsApproved(string mediaType, int permissions)
+    {
+        var probe = new PendingRequestProbe();
+        var handler = PendingRequestHandler(probe, () => JsonResponse($"{{\"id\":7,\"permissions\":{permissions}}}"));
+
+        using var client = new SeerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        await RequestAsync(client, mediaType);
+
+        Assert.Equal(1, probe.ApproveCalls);
+    }
+
+    [Theory]
+    [InlineData("movie", 0)]
+    [InlineData("movie", 32)]   // REQUEST only
+    [InlineData("movie", 512)]  // AUTO_APPROVE_TV does not cover films
+    [InlineData("tv", 256)]     // AUTO_APPROVE_MOVIE does not cover shows
+    [InlineData("tv", 32 | 1024)]
+    public async Task PendingRequest_UserMayNotAutoApprove_StaysPending(string mediaType, int permissions)
+    {
+        var probe = new PendingRequestProbe();
+        var handler = PendingRequestHandler(probe, () => JsonResponse($"{{\"id\":7,\"permissions\":{permissions}}}"));
+
+        var logs = new ListLogger();
+        using var client = new SeerrClient(BaseUrl, ApiKey, logs, handler);
+        await RequestAsync(client, mediaType);
+
+        Assert.Equal(0, probe.ApproveCalls);
+        Assert.Contains(logs.Entries, e => e.Message.Contains("stays PENDING", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PendingRequest_MasterSwitchOff_PermittedUserIsNotApproved()
+    {
+        var probe = new PendingRequestProbe();
+        var handler = PendingRequestHandler(probe, () => JsonResponse("{\"id\":7,\"permissions\":2}"));
+
+        using var client = new SeerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler, autoApprove: false);
+        await client.RequestMovieAsync(100, 7);
+
+        Assert.Equal(0, probe.ApproveCalls);
+        Assert.Equal(0, probe.UserLookups);
+    }
+
+    public static IEnumerable<object[]> UnreadablePermissions() => new[]
+    {
+        new object[] { (Func<HttpResponseMessage>)(() => new HttpResponseMessage(HttpStatusCode.InternalServerError)) },
+        new object[] { (Func<HttpResponseMessage>)(() => new HttpResponseMessage(HttpStatusCode.Forbidden)) },
+        new object[] { (Func<HttpResponseMessage>)(() => JsonResponse("{\"id\":7}")) },
+        new object[] { (Func<HttpResponseMessage>)(() => JsonResponse("not json")) },
+        new object[] { (Func<HttpResponseMessage>)(() => throw new HttpRequestException("connection reset")) },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnreadablePermissions))]
+    public async Task PendingRequest_PermissionLookupFails_StaysPendingAndWarns(Func<HttpResponseMessage> userResponse)
+    {
+        var probe = new PendingRequestProbe();
+        var handler = PendingRequestHandler(probe, userResponse);
+
+        var logs = new ListLogger();
+        using var client = new SeerrClient(BaseUrl, ApiKey, logs, handler);
+        var (result, _) = await client.RequestMovieAsync(100, 7);
+
+        Assert.Equal(SeerrClient.RequestResult.Requested, result);
+        Assert.Equal(0, probe.ApproveCalls);
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning
+            && e.Message.Contains("Could not read Seerr permissions", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PermissionLookup_IsCachedPerUser()
+    {
+        var probe = new PendingRequestProbe();
+        var handler = PendingRequestHandler(probe, () => JsonResponse(PermittedUser));
+
+        using var client = new SeerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        await client.RequestMovieAsync(100, 7);
+        await client.RequestMovieAsync(100, 7);
+        await client.RequestSeriesAsync(100, 7, new[] { 1 });
+
+        Assert.Equal(3, probe.ApproveCalls);
+        Assert.Equal(1, probe.UserLookups);
+    }
+
+    [Fact]
+    public async Task PermissionLookup_FailureIsCachedToo()
+    {
+        var probe = new PendingRequestProbe();
+        var handler = PendingRequestHandler(probe, () => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+        using var client = new SeerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        await client.RequestMovieAsync(100, 7);
+        await client.RequestMovieAsync(100, 7);
+
+        Assert.Equal(0, probe.ApproveCalls);
+        Assert.Equal(1, probe.UserLookups);
+    }
+
+    [Fact]
+    public async Task ApprovePendingForUserAsync_UserMayNotAutoApprove_LeavesBacklogAlone()
+    {
+        var approveCalls = 0;
+        var pendingLookups = 0;
+        var handler = new SeerrHandler(req =>
+        {
+            if (IsUserLookup(req, 7))
+                return JsonResponse("{\"id\":7,\"permissions\":32}");
+
+            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/request"))
+            {
+                pendingLookups++;
+                return JsonResponse(@"{""results"":[
+                    {""id"":501,""status"":1,""type"":""movie"",""requestedBy"":{""id"":7},""media"":{""tmdbId"":9962}}
+                ]}");
+            }
+
+            if (req.RequestUri!.AbsolutePath.EndsWith("/approve")) approveCalls++;
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var client = new SeerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        var (approved, failed) = await client.ApprovePendingForUserAsync(7, new[] { 9962 });
+
+        Assert.Equal(0, approved);
+        Assert.Equal(0, failed);
+        Assert.Equal(0, approveCalls);
+        Assert.Equal(0, pendingLookups);
     }
 
     private sealed class ListLogger : ILogger
