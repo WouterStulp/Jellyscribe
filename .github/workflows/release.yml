@@ -1,60 +1,116 @@
 name: Release
 
-# Every push to main: when no tag exists for the current AssemblyVersion, run fork/release.sh with
-# the merged PR's "## Release notes" section as the changelog. Merges without a version bump stop
-# at the tag check, and so does the manifest commit release.sh pushes.
+# Runs when a release is published on GitHub. The tag is the version (v2.10.0.4 builds 2.10.0.4), the
+# release text is the changelog. The build job has a read-only token; only the publish job can write,
+# and it runs none of the repository's code, so a compromised build dependency can't publish.
+# The plugin repository Jellyfin installs from is the manifest.json asset of the latest release:
+# https://github.com/WouterStulp/Jellyscribe/releases/latest/download/manifest.json
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      abi: ${{ steps.version.outputs.abi }}
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Check for an unreleased version
-        id: check
+      - name: Version from tag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          version=$(sed -n 's:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p' Directory.Build.props)
-          if git ls-remote --exit-code --tags origin "v$version" >/dev/null; then
-            echo "v$version is already released."
-            echo "release=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          fi
+          version=${TAG#v}
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH.FORK, e.g. v2.10.0.4"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "abi=$(cat targetAbi.txt)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-dotnet@v5
-        if: steps.check.outputs.release == 'true'
         with:
           dotnet-version: '9.0.x'
 
-      - name: Release
-        if: steps.check.outputs.release == 'true'
+      - name: Test
+        run: dotnet test -c Release --filter "Category!=Integration"
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          dotnet publish -c Release LetterboxdSync/LetterboxdSync.csproj -o out \
+            -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
+          zip -j "jellyscribe-v$VERSION.zip" out/Jellyscribe.dll out/HtmlAgilityPack.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin
+          path: jellyscribe-v*.zip
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin
+
+      - name: Attach the plugin and the updated manifest
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          ABI: ${{ needs.build.outputs.abi }}
+          NOTES: ${{ github.event.release.body }}
         run: |
-          subject=$(git log -1 --format=%s)
-          pr=$(echo "$subject" | sed -nE 's/.*\(#([0-9]+)\)$/\1/p')
-          notes=""
-          if [ -n "$pr" ]; then
-            notes=$(gh pr view "$pr" --json body -q .body | python3 -c '
-          import re, sys
-          m = re.search(r"^## Release notes\s*\n(.*?)(?=^## |\Z)", sys.stdin.read(), re.S | re.M)
-          notes = re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S) if m else ""
-          print(re.sub(r"^.*Generated with \[Claude Code\].*$", "", notes, flags=re.M).strip())')
-          fi
-          [ -n "$notes" ] || notes="$subject"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          fork/release.sh "$notes"
+          zip="jellyscribe-v$VERSION.zip"
+          # Earlier versions come from the manifest of the newest other release that has one.
+          for tag in $(gh api "repos/$REPO/releases?per_page=100" -q '.[] | select(.draft | not) | .tag_name'); do
+            [ "$tag" = "$TAG" ] && continue
+            gh release download "$tag" -R "$REPO" -p manifest.json -O previous.json 2>/dev/null && break
+          done
+          python3 - "$zip" <<'PY'
+          import datetime, hashlib, json, os, sys
+          zip_name = sys.argv[1]
+          version = os.environ['VERSION']
+          if os.path.exists('previous.json'):
+              manifest = json.load(open('previous.json'))
+          else:
+              manifest = [{
+                  'guid': 'c7a3e1b9-5d42-4f8a-9c06-2b7d8e4f1a35',
+                  'name': 'Jellyscribe',
+                  'overview': 'Sync Jellyfin watch history to Letterboxd and Serializd',
+                  'description': 'WouterStulp fork of Jellyscribe.',
+                  'category': 'General',
+                  'owner': 'WouterStulp',
+                  'versions': [],
+              }]
+          versions = [v for v in manifest[0]['versions'] if v['version'] != version]
+          versions.insert(0, {
+              'version': version,
+              'changelog': os.environ['NOTES'].strip() or f'Jellyscribe {version}',
+              'targetAbi': os.environ['ABI'],
+              'sourceUrl': f"https://github.com/{os.environ['REPO']}/releases/download/{os.environ['TAG']}/{zip_name}",
+              'checksum': hashlib.md5(open(zip_name, 'rb').read()).hexdigest(),
+              'timestamp': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+          })
+          manifest[0]['versions'] = versions
+          json.dump(manifest, open('manifest.json', 'w'), indent=2)
+          PY
+          gh release upload "$TAG" "$zip" manifest.json -R "$REPO" --clobber
