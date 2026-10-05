@@ -592,6 +592,33 @@ public class LetterboxdController : JellyfinUserApiController
         }
     }
 
+    /// <summary>
+    /// Sends a test ntfy message using the URL and token from the settings form, so the admin
+    /// can check them before saving. Admin-only: it makes the server POST to any URL.
+    /// </summary>
+    [HttpPost("Notifications/Test")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> TestNotification([FromBody] NtfyTestRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Url))
+            return BadRequest(new { success = false, error = "ntfy URL is required" });
+
+        try
+        {
+            await Notifier.SendAsync(request.Url.Trim(), request.Token, "Jellyscribe: test notification",
+                "Notifications from Jellyscribe work. You'll get a message here when syncing needs attention.",
+                "default").ConfigureAwait(false);
+            return Ok(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("ntfy test failed: {Message}", ex.Message);
+            return BadRequest(new { success = false, error = ex.Message });
+        }
+    }
+
     [HttpPost("Review")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
