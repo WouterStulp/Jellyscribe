@@ -494,6 +494,19 @@ public class SerializdSyncRunner
                 _logger.LogError("Serializd: failed marking TMDb {Show} as currently watching for {Username}: {Message}",
                     tmdb, user.Username, ex.Message);
             }
+
+            try
+            {
+                if (await SerializdShowStatus.MarkWatchedAsync(service, userId, account.Email, tmdb,
+                        () => finished(tmdb), _logger)
+                    .ConfigureAwait(false))
+                    _logger.LogInformation("Serializd: marked TMDb {Show} as watched for {Username}", tmdb, user.Username);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Serializd: failed marking TMDb {Show} as watched for {Username}: {Message}",
+                    tmdb, user.Username, ex.Message);
+            }
         }
 
         // The episode scan in SyncOneAsync already resolved each played episode's parent

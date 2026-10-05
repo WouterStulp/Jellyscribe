@@ -558,6 +558,38 @@ public class SerializdApiClient : ISerializdService
         }
     }
 
+    public async Task SetWatchedAsync(int showTmdbId)
+    {
+        // Fetched fresh: a cached map can predate the show's last seasons, and this runs once per show.
+        var seasons = await FetchSeasonMapAsync(showTmdbId, CancellationToken.None).ConfigureAwait(false);
+        SeasonCache[showTmdbId] = seasons;
+
+        var payload = new Dictionary<string, object>
+        {
+            ["show_id"] = showTmdbId,
+            ["season_ids"] = seasons.Where(s => s.Key > 0).OrderBy(s => s.Key).Select(s => s.Value).ToArray(),
+            ["async"] = true,
+        };
+        using var resp = await SendAsync(HttpMethod.Post, "/watched_v2", JsonSerializer.Serialize(payload))
+            .ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            throw new Exception($"Serializd watched ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
+        }
+    }
+
+    public async Task RemoveCurrentlyWatchingAsync(int showTmdbId)
+    {
+        var body = JsonSerializer.Serialize(new Dictionary<string, object> { ["show_id"] = showTmdbId });
+        using var resp = await SendAsync(HttpMethod.Post, "/currently_watching/remove", body).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            throw new Exception($"Serializd currently-watching remove ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
+        }
+    }
+
     /// <param name="cancellationToken">Cancels the waits (the request gate, backoff and a
     /// rate-limit pause) and a read in flight, never a write already sent: Serializd may have
     /// applied it.</param>

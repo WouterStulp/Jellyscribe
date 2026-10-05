@@ -224,6 +224,66 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
 
         Assert.Equal(1, checks);
         await service.DidNotReceive().SetCurrentlyWatchingAsync(Arg.Any<int>());
+        await service.Received(1).SetWatchedAsync(ShowTmdbId);
+        await service.Received(1).RemoveCurrentlyWatchingAsync(ShowTmdbId);
+    }
+
+    [Fact]
+    public async Task Run_FinishedShowNotYetMarkedWatched_StillLogsIn()
+    {
+        var (user, idHex) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3);
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3, SerializdSyncHistory.KindLog);
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 0, 0, SerializdSyncHistory.KindFinished);
+        var service = FakeService(out _);
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        await service.Received(1).SetWatchedAsync(ShowTmdbId);
+    }
+
+    [Fact]
+    public async Task Run_WatchedShowWithNothingNew_DoesNotLogIn()
+    {
+        var (user, idHex) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3);
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 1, 3, SerializdSyncHistory.KindLog);
+        SerializdSyncHistory.Record(idHex, "user@example.com", ShowTmdbId, 0, 0, SerializdSyncHistory.KindShowWatched);
+        var logins = 0;
+        SerializdServiceFactory.OverrideForTesting = (_, _, _) =>
+        {
+            logins++;
+            return Task.FromResult(Substitute.For<ISerializdService>());
+        };
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        Assert.Equal(0, logins);
+    }
+
+    [Fact]
+    public async Task Run_FailedWatchedCall_IsRetriedNextRun()
+    {
+        var (user, _) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdShowStatus.FinishedReader = (_, _) => true;
+        var service = FakeService(out _);
+        service.SetWatchedAsync(ShowTmdbId).Returns(Task.FromException(new Exception("500")), Task.CompletedTask);
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        await service.Received(2).SetWatchedAsync(ShowTmdbId);
+        await service.Received(1).RemoveCurrentlyWatchingAsync(ShowTmdbId);
     }
 
     [Fact]
@@ -242,6 +302,7 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
         Assert.Single(logged);
         Assert.Equal(1, checks);
         await service.Received(1).SetCurrentlyWatchingAsync(ShowTmdbId);
+        await service.DidNotReceive().SetWatchedAsync(Arg.Any<int>());
     }
 
     [Fact]

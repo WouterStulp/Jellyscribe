@@ -397,17 +397,24 @@ public class PlaybackHandler : IHostedService, IDisposable
                         episode.SeriesName, epRef.SeasonNumber, string.Join(",", epRef.EpisodeNumbers),
                         epRef.ShowTmdbId, user.Username, LogRedaction.AccountTag(account.Email));
 
+                    var finished = new Lazy<bool>(() => SerializdShowStatus.FinishedReader(
+                        episode.Series, ep => _userDataManager.GetUserData(user, ep)?.Played == true));
                     try
                     {
                         if (await SerializdShowStatus.MarkCurrentlyWatchingAsync(service, userId, account.Email, epRef.ShowTmdbId,
-                                () => SerializdShowStatus.FinishedReader(episode.Series, ep => _userDataManager.GetUserData(user, ep)?.Played == true))
+                                () => finished.Value)
                             .ConfigureAwait(false))
                             _logger.LogInformation("Marked {Series} as currently watching on Serializd for {Username}",
+                                episode.SeriesName, user.Username);
+                        if (await SerializdShowStatus.MarkWatchedAsync(service, userId, account.Email, epRef.ShowTmdbId,
+                                () => finished.Value, _logger)
+                            .ConfigureAwait(false))
+                            _logger.LogInformation("Marked {Series} as watched on Serializd for {Username}",
                                 episode.SeriesName, user.Username);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning("Could not mark {Series} as currently watching on Serializd for {Username}: {Message}",
+                        _logger.LogWarning("Could not update the Serializd status of {Series} for {Username}: {Message}",
                             episode.SeriesName, user.Username, ex.Message);
                     }
                 }
