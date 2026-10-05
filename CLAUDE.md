@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Jellyfin plugin ("Jellyscribe") that syncs watch history to Letterboxd (film) and Serializd (TV). C#/.NET 9, targets Jellyfin 10.11 (`Jellyfin.Controller`/`Jellyfin.Model` 10.11.0). Letterboxd's official endpoint (`/api/v0/production-log-entries`) is preferred; the plugin falls back to web scraping (cookie login, CSRF tokens, HtmlAgilityPack) when the API path fails. Serializd's API needs no such fallback. The C# namespace, project folder, and solution file all still say `LetterboxdSync` (pre-rebrand name, unchanged this release, see `openspec/changes/rebrand-jellyscribe/`); only the compiled `AssemblyName` and every user-visible surface say Jellyscribe.
+Jellyfin plugin ("Jellyscribe") that syncs watch history to Letterboxd (film) and Serializd (TV). C#/.NET 9, targets Jellyfin 10.11 (`Jellyfin.Controller`/`Jellyfin.Model` 10.11.0). Letterboxd's official endpoint (`/api/v0/production-log-entries`) is preferred; the plugin falls back to web scraping (cookie login, CSRF tokens, HtmlAgilityPack) when the API path fails. Serializd's API needs no such fallback. The C# namespace, project folder, and solution file all still say `LetterboxdSync` (pre-rebrand name); only the compiled `AssemblyName` and every user-visible surface say Jellyscribe.
 
 The sidebar link in the Jellyfin web UI is injected by `SidebarScriptStartupFilter`, an `IStartupFilter` middleware that adds the `sidebar.js` tag to the web client's index page at request time (the same approach as Jellyfin Enhanced), so no other plugin is needed. The third-party **File Transformation** plugin, when installed, injects the same tag; both paths share `SidebarScript.Inject`, which never adds a second copy. `sidebar.js` is the whole client: it adds the entry points (the sidebar before `.btnSettings` on 10.11, a clone of the avatar menu's Settings item in `#app-user-menu` on 12) and the in-app page at `#/jellyscribe`, which mounts `userPage.html` (fetched from Jellyfin's own `web/ConfigurationPage?name=letterboxduser`) into a `.mainAnimatedPage` of its own, the pattern Jellyfin Enhanced's Bookmarks uses. Capture-phase `hashchange`/`popstate` listeners keep Jellyfin's router from rendering "Page not found" for the route; the dashboard is unmounted when the page is left; anything that stops it mounting falls back to the configuration page. No JS test harness exists: verify client changes with a Playwright run against throwaway Jellyfin 10.11 (with a base URL) and 12 containers.
 
@@ -58,52 +58,13 @@ Deploy a debug build to the local Jellyfin server: `./deploy.sh` (scp's `Jellysc
 
 ## Releasing
 
-**Every merge to `main` that changes what ships, ships a release.** No manual tag pushes, no release-notes files. **We only release when a change affects the user; non-shipping PRs are exempt**: if the whole diff sits in non-shipping paths (any `*.md`, `docs/`, `openspec/`, `site/`, `worker/`, `.github/`, `LetterboxdSync.Tests/`), skip the version bump, the `## Release notes` section, and the `release-notes.ts` entry; the merge then ships no release (release.yml sees the existing tag and stops) and the site still redeploys for `site/**` changes via deploy-docs' push trigger. `manifest.json` is never exempt. The full pipeline is:
+This is a standalone fork of builtbyproxy/Jellyscribe; never open PRs against upstream. Versions are the upstream version the fork is based on plus a fourth number (`2.10.0` → `2.10.0.1`).
 
-1. Open a PR. Unless non-shipping (above), the PR must:
-   - Have a **Conventional Commits** title (`feat:`, `fix:`, `chore:`, `docs:`, `ci:`, `refactor:`, `test:`, `perf:`, `build:`, `style:`). Enforced by `pr-title.yml` (this one applies to non-shipping PRs too).
-   - **Bump `AssemblyVersion` / `FileVersion`** in both `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj`. Patch bumps (e.g. `1.13.0.0` → `1.13.1.0`) are fine for CI / refactor changes. Enforced by `version-gate.yml`.
-   - Fill in the **`## Release notes`** section in the PR body. `release.yml` extracts text between that heading and the next H2 and uses it verbatim as the manifest changelog field and the GitHub Release body. The PR template primes the section so it's the path of least resistance. Past entries on https://jellyscribe.dev/releases set the tone: one paragraph, user-facing prose, no symbol names / internal jargon.
-   - Add a structured entry to **`site/src/data/release-notes.ts`** for the new version (headline + summary + categorised highlights). The site renders these on the Releases page above the raw manifest changelog. Same tone as the manifest changelog but split into `new` / `improvements` / `fixes` / `breaking` bullets.
-   - **SDK floor policy (issue #63)**: the `Jellyfin.Controller`/`Jellyfin.Model` PackageReference version MUST equal `targetAbi.txt`, Jellyfin assemblies have per-patch AssemblyVersions, so the SDK we compile against is the real minimum Jellyfin a release can load on. Never bump the SDK routinely (Dependabot PRs are a compile signal, not a merge queue); bump it only when we need a newer API, raising `targetAbi.txt` and the minor version in the same PR. CI enforces the SDK==targetAbi match.
-   - **Jellyfin 12 cliff (verified 2026-07-06)**: the 12.x SDK packages are net10.0-only, they do NOT restore against this net9.0 project (NU1202). Current net9.0 builds run fine on Jellyfin 12 servers (newer runtime loads older assemblies), but compiling against the 12 SDK forces net10.0, which cannot load on 10.11's .NET 9 host, so adopting the 12 SDK is a one-way release-stream split, never a routine bump. Staged plan: `openspec/changes/add-jellyfin-12-support/`.
+1. Open a PR against `main` with a Conventional Commits title. If the change ships to users, bump `AssemblyVersion` / `FileVersion` in both `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj`, and fill in the `## Release notes` section of the PR body: one paragraph of user-facing prose, no symbol names. Docs, CI and test-only PRs skip both.
+2. Squash and merge. The squash subject ends in `(#NN)`, which `release.yml` uses to read that PR's `## Release notes`.
+3. `release.yml` runs on every push to `main`. When no tag exists for the current `AssemblyVersion` it runs `fork/release.sh`: tests, publish, GitHub release, a new entry in `fork/manifest.json` (the plugin repository Jellyfin installs from), and a push of that commit. Without a version bump it stops, so non-shipping merges release nothing.
 
-2. Merge with **Squash and merge**. The squash subject is the PR title with `(#NN)` appended; the release workflow extracts the PR number from that and fetches the PR body via `gh pr view` (the squash commit body itself is not reliable across merge methods).
+`fork/release.sh "<changelog>"` also runs by hand. It uses a local `dotnet` when there is one and the `mcr.microsoft.com/dotnet/sdk:9.0` container otherwise.
 
-3. `release.yml` fires automatically on the push to `main`. It reads `AssemblyVersion` from `Directory.Build.props`, checks no tag for that version exists yet (idempotent), builds + tests, packages, creates the GitHub Release with the PR body's `## Release notes` section, inserts the manifest entry using `targetAbi.txt`, and pushes the auto-commit + tag together.
-
-4. `deploy-docs.yml` fires via `workflow_run` on Release completion, rebuilding jellyscribe.dev with the fresh manifest. (The `GITHUB_TOKEN`-authenticated auto-commit can't fire push-based workflows, hence the explicit `workflow_run` trigger.)
-
-### Breaking changes
-
-The version-bump magnitude is the canonical signal, not a `!` in the PR title. Going `1.x.y` → `2.0.0` means breaking; we do not use `feat!:` / `fix!:`.
-
-### Past incidents this pipeline prevents
-
-- **v1.12.0.0** manifest entry was merged to main with `"checksum": "PLACEHOLDER"` and no tag ever got pushed, leaving the manifest advertising a 404'ing release for every user. `release.yml` is now the *only* writer of `manifest.json`, and `ci.yml`'s manifest validator refuses any PR that touches it with a `PLACEHOLDER` or 404 `sourceUrl`.
-- **v1.13.0** was cut manually after the merge, which works but doesn't enforce that *every* merge ships. The version-gate now guarantees a release on every merge.
-- **v1.12.0 and v1.13.0 site staleness**: the manifest auto-commit didn't trigger Deploy site (GitHub token limitation). The `workflow_run` trigger now fires Deploy site after every Release.
-- **v1.13.0 SDK ABI break**: Jellyfin 10.11.9 removed `IUserManager.Users` (replaced by `GetUsers()`), so v1.13.0 bumped the SDK to 10.11.10 and `targetAbi.txt` to `10.11.9.0`. See `feedback_jellyfin_plugin_abi_break` in the user's memory.
-- **v1.13.0 and v1.13.1 changelog drift**: v1.13.0's manifest changelog was written as a multi-paragraph incident report (markdown headings, code backticks, "MissingMethodException", PR refs) instead of the single-paragraph user prose of v1.0–v1.12. v1.13.1's was even worse: just the squash-merge commit subject `ci: enforce version bump on every PR, auto-release on merge, rebuild site on release (#50)`, because the earlier pipeline read `git log -1 --format='%B' HEAD` and `gh pr merge --squash` only puts the PR title there. release.yml now extracts the changelog from a `## Release notes` section in the PR body (via `gh pr view`), with the PR template seeding the section. Backfilled in v1.13.2.
-
-## OpenSpec
-
-Spec-driven workflow lives under `openspec/` (`changes/`, `specs/`, `config.yaml`). Use the `/opsx:propose`, `/opsx:apply`, `/opsx:archive`, `/opsx:explore` skills for non-trivial changes when the user requests them.
-
-## Skill routing
-
-When the user's request matches an available skill, ALWAYS invoke it using the Skill
-tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
-The skill has specialized workflows that produce better results than ad-hoc answers.
-
-Key routing rules:
-- Product ideas, "is this worth building", brainstorming → invoke office-hours
-- Bugs, errors, "why is this broken", 500 errors → invoke investigate
-- Ship, deploy, push, create PR → invoke ship
-- QA, test the site, find bugs → invoke qa
-- Code review, check my diff → invoke review
-- Update docs after shipping → invoke document-release
-- Weekly retro → invoke retro
-- Design system, brand → invoke design-consultation
-- Visual audit, design polish → invoke design-review
-- Architecture review → invoke plan-eng-review
+- **SDK floor policy (issue #63)**: the `Jellyfin.Controller`/`Jellyfin.Model` PackageReference version MUST equal `targetAbi.txt`. Jellyfin assemblies have per-patch AssemblyVersions, so the SDK we compile against is the real minimum Jellyfin a release can load on. Bump it only when a newer API is needed, raising `targetAbi.txt` in the same PR.
+- **Jellyfin 12 cliff (verified 2026-07-06)**: the 12.x SDK packages are net10.0-only and don't restore against this net9.0 project (NU1202). net9.0 builds run fine on Jellyfin 12 servers, but compiling against the 12 SDK forces net10.0, which can't load on 10.11's .NET 9 host, so adopting it is a one-way split of the release stream. `ci.yml`'s non-blocking probe job reports whether the code still builds against 12.

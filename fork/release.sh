@@ -11,8 +11,12 @@ zip="jellyscribe-$tag.zip"
 changelog=${1:?usage: fork/release.sh "<one-paragraph changelog>"}
 
 rm -rf out "$zip"
-docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:9.0 \
-    sh -c 'dotnet test -c Release LetterboxdSync.Tests/LetterboxdSync.Tests.csproj --filter "FullyQualifiedName!~Integration" && dotnet publish -c Release LetterboxdSync/LetterboxdSync.csproj -o /src/out'
+build='dotnet test -c Release LetterboxdSync.Tests/LetterboxdSync.Tests.csproj --filter "FullyQualifiedName!~Integration" && dotnet publish -c Release LetterboxdSync/LetterboxdSync.csproj -o out'
+if command -v dotnet >/dev/null; then
+    sh -c "$build"
+else
+    docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:9.0 sh -c "$build"
+fi
 zip -j -q "$zip" out/Jellyscribe.dll out/HtmlAgilityPack.dll
 
 gh release create "$tag" "$zip" -R WouterStulp/Jellyscribe --target "$(git rev-parse HEAD)" \
