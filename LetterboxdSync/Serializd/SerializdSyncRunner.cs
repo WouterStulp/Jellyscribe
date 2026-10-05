@@ -285,7 +285,7 @@ public class SerializdSyncRunner
         }
 
         using var service = await SerializdServiceFactory
-            .CreateAuthenticatedAsync(account.Email, account.Password, _logger)
+            .CreateAuthenticatedAsync(account.Email, account.Password, _logger, user.Username)
             .ConfigureAwait(false);
 
         var targets = new Dictionary<(int Show, int Season), SerializdSeasonTarget?>();

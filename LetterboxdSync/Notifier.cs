@@ -38,6 +38,15 @@ public static class Notifier
             "high",
             logger);
 
+    public static Task SerializdLoginFailedAsync(string jellyfinUsername, string email, string? reason, ILogger logger)
+        => TrySendAsync(
+            $"szauth|{jellyfinUsername}|{email.ToLowerInvariant()}",
+            "Jellyscribe: Serializd login failing",
+            $"Serializd login failed for {jellyfinUsername} ({email}): {AuthBreaker.Sanitize(reason) ?? "unknown error"}. " +
+            "TV syncing for this account fails until you fix the login in Jellyscribe settings.",
+            "high",
+            logger);
+
     public static Task GaveUpAsync(string title, string? jellyfinUsername, int tmdbId, int attempts, string? lastError, ILogger logger)
         => TrySendAsync(
             $"gaveup|{jellyfinUsername}|{tmdbId}",

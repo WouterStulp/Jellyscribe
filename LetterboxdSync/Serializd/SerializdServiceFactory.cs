@@ -13,13 +13,26 @@ public static class SerializdServiceFactory
     /// </summary>
     internal static Func<string, string, ILogger, Task<ISerializdService>>? OverrideForTesting;
 
-    public static async Task<ISerializdService> CreateAuthenticatedAsync(string email, string password, ILogger logger)
+    /// <summary>
+    /// Returns a logged-in client. When <paramref name="jellyfinUsername"/> is set (background sync
+    /// paths), a rejected login also pushes an admin alert via <see cref="Notifier"/>.
+    /// </summary>
+    public static async Task<ISerializdService> CreateAuthenticatedAsync(string email, string password, ILogger logger,
+        string? jellyfinUsername = null)
     {
-        if (OverrideForTesting != null)
-            return await OverrideForTesting(email, password, logger).ConfigureAwait(false);
+        try
+        {
+            if (OverrideForTesting != null)
+                return await OverrideForTesting(email, password, logger).ConfigureAwait(false);
 
-        var client = new SerializdApiClient(logger);
-        await client.AuthenticateAsync(email, password).ConfigureAwait(false);
-        return client;
+            var client = new SerializdApiClient(logger);
+            await client.AuthenticateAsync(email, password).ConfigureAwait(false);
+            return client;
+        }
+        catch (SerializdAuthException ex) when (jellyfinUsername != null)
+        {
+            await Notifier.SerializdLoginFailedAsync(jellyfinUsername, email, ex.Message, logger).ConfigureAwait(false);
+            throw;
+        }
     }
 }

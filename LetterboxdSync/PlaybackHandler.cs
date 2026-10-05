@@ -276,7 +276,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                 try
                 {
                     using var service = await SerializdServiceFactory
-                        .CreateAuthenticatedAsync(account.Email, account.Password, _logger)
+                        .CreateAuthenticatedAsync(account.Email, account.Password, _logger, user.Username)
                         .ConfigureAwait(false);
 
                     var target = await SerializdSeasonFallback

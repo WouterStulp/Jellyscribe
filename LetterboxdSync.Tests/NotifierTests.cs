@@ -11,6 +11,7 @@ using Jellyfin.Database.Implementations.Entities;
 using LetterboxdSync;
 using LetterboxdSync.Api;
 using LetterboxdSync.Configuration;
+using LetterboxdSync.Serializd;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
@@ -79,6 +80,7 @@ public class NotifierTests : IDisposable
         Notifier.Http = _originalHttp;
         Notifier.ResetForTesting();
         LetterboxdServiceFactory.OverrideForTesting = null;
+        SerializdServiceFactory.OverrideForTesting = null;
         SyncHistory.DataPathOverride = null;
         SyncHistory.ResetForTesting();
         AuthBreaker.DataPathOverride = null;
@@ -229,6 +231,52 @@ public class NotifierTests : IDisposable
         var r = Assert.Single(_handler.Requests);
         Assert.Equal("default", r.Headers["Priority"]);
         Assert.Contains("Gave up on Sinners for lachlan after 3 failed attempts: film not found", r.Body);
+    }
+
+    private SerializdDiaryImportRunner SetUpSerializdImportAccount()
+    {
+        var user = new User("lachlan", "test-provider-id", "test-reset-id");
+        _userManager.GetUsers().Returns(new[] { user });
+        Plugin.Instance!.Configuration.SerializdAccounts.Add(new SerializdAccount
+        {
+            UserJellyfinId = user.Id.ToString("N"),
+            Email = "tv@example.com",
+            Password = Password,
+            Enabled = true,
+            EnableDiaryImport = true
+        });
+        return new SerializdDiaryImportRunner(NullLoggerFactory.Instance, _libraryManager, _userManager, _userDataManager);
+    }
+
+    [Fact]
+    public async Task SerializdAuthFailure_SendsOneHighPriorityNotificationPerDay()
+    {
+        Enable();
+        var runner = SetUpSerializdImportAccount();
+        SerializdServiceFactory.OverrideForTesting = (_, _, _) =>
+            throw new SerializdAuthException("Serializd login failed (401): {\"message\":\"Incorrect password.\"}");
+
+        await runner.RunForAllAsync(new Progress<double>(), CancellationToken.None);
+        await runner.RunForAllAsync(new Progress<double>(), CancellationToken.None);
+
+        var r = Assert.Single(_handler.Requests);
+        Assert.Equal("high", r.Headers["Priority"]);
+        Assert.StartsWith("Serializd login failed for lachlan (tv@example.com): Serializd login failed (401)", r.Body);
+        Assert.Contains("TV syncing for this account fails until you fix the login", r.Body);
+        Assert.DoesNotContain(Password, r.Body);
+    }
+
+    [Fact]
+    public async Task SerializdNetworkError_SendsNothing()
+    {
+        Enable();
+        var runner = SetUpSerializdImportAccount();
+        SerializdServiceFactory.OverrideForTesting = (_, _, _) =>
+            throw new HttpRequestException("Connection refused");
+
+        await runner.RunForAllAsync(new Progress<double>(), CancellationToken.None);
+
+        Assert.Empty(_handler.Requests);
     }
 
     [Fact]

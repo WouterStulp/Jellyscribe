@@ -134,7 +134,7 @@ public class SerializdWatchlistSyncRunner
     {
         List<SerializdWatchlistEntry> entries;
         using (var service = await SerializdServiceFactory
-                   .CreateAuthenticatedAsync(account.Email, account.Password, _logger).ConfigureAwait(false))
+                   .CreateAuthenticatedAsync(account.Email, account.Password, _logger, user.Username).ConfigureAwait(false))
         {
             entries = await service.GetWatchlistAsync().ConfigureAwait(false);
         }
