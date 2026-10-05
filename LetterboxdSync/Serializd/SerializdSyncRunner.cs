@@ -85,15 +85,7 @@ public class SerializdSyncRunner
             foreach (var (user, account) in pairs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    await SyncOneAsync(user, account, source, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Serializd catch-up failed for {Username} as {Email}: {Message}",
-                        user.Username, account.Email, ex.Message);
-                }
+                await SyncOneLoggedAsync(user, account, source, cancellationToken).ConfigureAwait(false);
 
                 processed++;
                 if (pairs.Count > 0)
@@ -130,15 +122,7 @@ public class SerializdSyncRunner
             foreach (var account in accounts)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    await SyncOneAsync(user, account, source, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Serializd catch-up failed for {Username} as {Email}: {Message}",
-                        user.Username, account.Email, ex.Message);
-                }
+                await SyncOneLoggedAsync(user, account, source, cancellationToken).ConfigureAwait(false);
             }
 
             return true;
@@ -147,6 +131,20 @@ public class SerializdSyncRunner
         {
             SyncProgress.Complete(SyncProgress.TrackSerializd);
             SerializdSyncGate.Instance.Release();
+        }
+    }
+
+    /// <summary>One account's failure is logged and never stops the remaining accounts.</summary>
+    private async Task SyncOneLoggedAsync(User user, SerializdAccount account, string source, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SyncOneAsync(user, account, source, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Serializd catch-up failed for {Username} as {Email}: {Message}",
+                user.Username, account.Email, ex.Message);
         }
     }
 
