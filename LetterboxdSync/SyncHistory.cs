@@ -448,10 +448,6 @@ public static class SyncHistory
             }
         }
 
-        // Telemetry chokepoint: every sync outcome in the plugin flows through Record,
-        // so this single hook counts successes/skips/failures from all sources. No-op
-        // (and exception-proof) while telemetry is disabled.
-        TelemetryService.OnSyncEvent(evt);
     }
 
     public static List<SyncEvent> GetRecent(int count = 100, string? username = null)

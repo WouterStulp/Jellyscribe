@@ -21,7 +21,7 @@ public class ScheduledTaskCategoryTests
             .Where(t => typeof(IScheduledTask).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface)
             .ToList();
 
-        Assert.True(taskTypes.Count >= 8, $"expected at least 8 scheduled tasks, found {taskTypes.Count}");
+        Assert.True(taskTypes.Count >= 7, $"expected at least 7 scheduled tasks, found {taskTypes.Count}");
         foreach (var type in taskTypes)
         {
             // Category is a constant expression-bodied property, so an uninitialised instance

@@ -80,8 +80,6 @@ public class SerializdDiaryImportRunner
                 {
                     _logger.LogError("Serializd diary import failed for {Username} as {Account}: {Message}",
                         user.Username, LogRedaction.AccountTag(account.Email), ex.Message);
-                    // No SyncEvent is recorded on this path; hook telemetry directly.
-                    TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
                 }
 
                 processed++;

@@ -16,7 +16,6 @@ internal static class TaskSchedule
     internal static readonly TimeSpan SerializdSync = new(4, 0, 0);
     internal static readonly TimeSpan SerializdWatchlist = new(4, 20, 0);
     internal static readonly TimeSpan SerializdDiaryImport = new(4, 40, 0);
-    internal static readonly TimeSpan Telemetry = new(5, 0, 0);
 
     /// <summary>
     /// How long a task may go without running before the fallback trigger runs it anyway.

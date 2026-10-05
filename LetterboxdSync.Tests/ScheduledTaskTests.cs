@@ -227,7 +227,6 @@ public class ScheduledTaskTests : IDisposable
                 new TimeSpan(4, 20, 0)),
             (new SerializdDiaryImportTask(new SerializdDiaryImportRunner(NullLoggerFactory.Instance, lm, um, udm)),
                 new TimeSpan(4, 40, 0)),
-            (new TelemetryTask(lm, Substitute.For<MediaBrowser.Controller.IServerApplicationHost>(), NullLoggerFactory.Instance), new TimeSpan(5, 0, 0)),
         };
 
         foreach (var (task, timeOfDay) in expected)

@@ -166,49 +166,6 @@ public class LetterboxdController : JellyfinUserApiController
         return Accepted(new { started = true });
     }
 
-    /// <summary>
-    /// Returns the exact JSON the next telemetry ping would send. Admin-only: the payload
-    /// contains the instance UUID plus a configuration fingerprint, the same policy as
-    /// the config page that displays it. Backs the Integrations "Preview" dialog and the
-    /// Overview opt-in notice, whose Copy and "Copy + regenerate ID" actions double as a
-    /// diagnostic bundle for bug reports.
-    /// </summary>
-    [HttpGet("Telemetry/Preview")]
-    [Authorize(Policy = "RequiresElevation")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult GetTelemetryPreview()
-    {
-        int? libraryCount;
-        try
-        {
-            libraryCount = _libraryManager.GetCount(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { BaseItemKind.Movie },
-                Recursive = true
-            });
-        }
-        catch
-        {
-            libraryCount = null;
-        }
-
-        var json = TelemetryService.BuildPayload("weekly", libraryCount);
-        return Content(json, "application/json");
-    }
-
-    /// <summary>
-    /// Gives this server a new random telemetry instance id, the settings "Regenerate ID" and
-    /// "Copy + regenerate ID" actions. Admin-only, like the preview that shows the id. Later
-    /// pings and log bundles carry only the new id; rows already sent keep the old one.
-    /// </summary>
-    [HttpPost("Telemetry/RegenerateId")]
-    [Authorize(Policy = "RequiresElevation")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult RegenerateTelemetryId()
-    {
-        return Ok(new { instanceId = TelemetryService.RegenerateInstanceId() });
-    }
-
     [HttpGet("Stats")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

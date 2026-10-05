@@ -61,21 +61,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             ResetBreakersForChangedCredentials(cfg);
 
             cfg.NormalisePrimaryFlags();
-
-            // Telemetry identity is generated server-side at the moment of opt-in, so
-            // every UI path (Overview notice, checkbox, raw API) gets the same guarantee: random
-            // UUID, never derived from anything, plus a per-instance jitter slot.
-            cfg.Telemetry ??= new TelemetryData();
-            if (cfg.Telemetry.Enabled && string.IsNullOrEmpty(cfg.Telemetry.InstanceId))
-            {
-                cfg.Telemetry.InstanceId = Guid.NewGuid().ToString();
-                cfg.Telemetry.JitterMinutes = Random.Shared.Next(0, 720);
-            }
-
-            // Opting in by any path answers the one-time Overview notice, so it never comes
-            // back, even if telemetry is later turned off again.
-            if (cfg.Telemetry.Enabled)
-                cfg.Telemetry.BannerDismissed = true;
         }
         base.UpdateConfiguration(configuration);
     }
