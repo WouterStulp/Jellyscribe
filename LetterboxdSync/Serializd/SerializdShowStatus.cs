@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Model.Entities;
 
 namespace LetterboxdSync.Serializd;
 
@@ -35,9 +36,11 @@ internal static class SerializdShowStatus
         return true;
     }
 
+    // Only an ended show can be finished: being caught up on one that is still airing means
+    // still watching it, and the finished marker is permanent.
     internal static bool IsFinished(Series? series, Func<Episode, bool> isPlayed)
     {
-        if (series == null)
+        if (series?.Status != SeriesStatus.Ended)
             return false;
 
         var episodes = series.GetRecursiveChildren(i => i is Episode)
