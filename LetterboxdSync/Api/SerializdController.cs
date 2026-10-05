@@ -135,6 +135,14 @@ public class SerializdController : JellyfinUserApiController
         }
 
         var config = Plugin.Instance!.Configuration;
+
+        // An email already linked to another Jellyfin user would let this user act as that
+        // Serializd account.
+        var taken = request.Accounts.Select(a => a.Email!.Trim()).FirstOrDefault(email => config.SerializdAccounts
+            .Any(a => a.UserJellyfinId != userId && string.Equals(a.Email?.Trim(), email, StringComparison.OrdinalIgnoreCase)));
+        if (taken != null)
+            return BadRequest(new { error = $"The Serializd account '{taken}' is already linked to another Jellyfin user." });
+
         var preserved = config.SerializdAccounts.Where(a => a.UserJellyfinId != userId).ToList();
         var previous = config.SerializdAccounts.Where(a => a.UserJellyfinId == userId).ToList();
         var mine = request.Accounts.Select(req => new Configuration.SerializdAccount
@@ -172,9 +180,15 @@ public class SerializdController : JellyfinUserApiController
     /// <summary>Serializd activity stats for the dashboard, same shape as the Letterboxd <c>/Stats</c>.</summary>
     [HttpGet("Stats")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult GetStats()
     {
-        var (total, success, failed, skipped, rewatches) = SerializdActivity.GetStats(GetJellyfinUsername());
+        // SerializdActivity treats a null username as "everyone", so an unresolved caller must stop here.
+        var jellyfinUsername = GetJellyfinUsername();
+        if (string.IsNullOrEmpty(jellyfinUsername))
+            return BadRequest(new { error = "Could not determine user" });
+
+        var (total, success, failed, skipped, rewatches) = SerializdActivity.GetStats(jellyfinUsername);
         var watchlist = WatchlistStats.GetTv(GetCurrentUserId() ?? string.Empty);
         return Ok(new { total, success, failed, skipped, rewatches, watchlist });
     }
@@ -182,10 +196,15 @@ public class SerializdController : JellyfinUserApiController
     /// <summary>Paged Serializd activity for the dashboard, same shape as the Letterboxd <c>/History</c>.</summary>
     [HttpGet("History")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult GetHistory([FromQuery] int count = 50, [FromQuery] int offset = 0)
     {
+        var jellyfinUsername = GetJellyfinUsername();
+        if (string.IsNullOrEmpty(jellyfinUsername))
+            return BadRequest(new { error = "Could not determine user" });
+
         var capped = Math.Clamp(count, 1, 500);
-        var (events, total) = SerializdActivity.GetPage(Math.Max(offset, 0), capped, GetJellyfinUsername());
+        var (events, total) = SerializdActivity.GetPage(Math.Max(offset, 0), capped, jellyfinUsername);
         return Ok(new { events, total });
     }
 

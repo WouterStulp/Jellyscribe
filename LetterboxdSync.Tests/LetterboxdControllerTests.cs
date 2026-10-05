@@ -63,10 +63,41 @@ public class LetterboxdControllerTests
 
     // ----- GetStats / GetHistory -----
 
+    /// <summary>Harness whose caller resolves to a real Jellyfin user, which /Stats and /History require.</summary>
+    private static ControllerTestHarness ResolvedUserHarness()
+    {
+        var user = new User("alice", "test-provider-id", "test-reset-id");
+        var h = new ControllerTestHarness(currentUserId: user.Id.ToString("N"));
+        h.UserManager.GetUsers().Returns(new List<User> { user });
+        return h;
+    }
+
+    [Fact]
+    public void GetStats_UnresolvedUser_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+
+        var result = h.Controller.GetStats();
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Could not determine user", Prop<string>(result, "error"));
+    }
+
+    [Fact]
+    public void GetHistory_UnresolvedUser_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: null);
+
+        var result = h.Controller.GetHistory();
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Could not determine user", Prop<string>(result, "error"));
+    }
+
     [Fact]
     public void GetStats_ReturnsCurrentStats()
     {
-        using var h = new ControllerTestHarness(currentUserId: UserId);
+        using var h = ResolvedUserHarness();
 
         var result = h.Controller.GetStats();
 
@@ -150,7 +181,7 @@ public class LetterboxdControllerTests
     [Fact]
     public void GetHistory_DefaultParams_ReturnsPageWithCount()
     {
-        using var h = new ControllerTestHarness(currentUserId: UserId);
+        using var h = ResolvedUserHarness();
 
         var result = h.Controller.GetHistory();
 
@@ -162,7 +193,7 @@ public class LetterboxdControllerTests
     [Fact]
     public void GetHistory_CapsCountAt200()
     {
-        using var h = new ControllerTestHarness();
+        using var h = ResolvedUserHarness();
 
         var result = h.Controller.GetHistory(count: 9999);
 
@@ -172,7 +203,7 @@ public class LetterboxdControllerTests
     [Fact]
     public void GetHistory_NegativeOffset_ClampedToZero()
     {
-        using var h = new ControllerTestHarness();
+        using var h = ResolvedUserHarness();
 
         var result = h.Controller.GetHistory(offset: -50);
 
@@ -486,6 +517,49 @@ public class LetterboxdControllerTests
         Assert.Single(mine, a => a.IsPrimary);
     }
 
+    [Fact]
+    public void PutAccounts_UsernameLinkedToOtherUser_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(OtherUserId, "victim");
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new() { new AccountUpdateRequest { LetterboxdUsername = "VICTIM ", LetterboxdPassword = "guess", Enabled = true } }
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("already linked to another Jellyfin user", Prop<string>(result, "error"));
+        Assert.DoesNotContain(h.Config.Accounts, a => a.UserJellyfinId == UserId);
+    }
+
+    [Fact]
+    public void PutAccounts_SameUserResavesOwnUsername_Succeeds()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "mine");
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new() { new AccountUpdateRequest { LetterboxdUsername = "mine", LetterboxdPassword = "new", Enabled = true } }
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("new", h.Config.Accounts.Single(a => a.UserJellyfinId == UserId).LetterboxdPassword);
+    }
+
+    [Fact]
+    public void PutAccount_UsernameLinkedToOtherUser_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(OtherUserId, "victim");
+
+        var result = h.Controller.PutAccount(new AccountUpdateRequest { LetterboxdUsername = "Victim", LetterboxdPassword = "guess" });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.DoesNotContain(h.Config.Accounts, a => a.UserJellyfinId == UserId);
+    }
+
     // ----- StartSync -----
 
     [Fact]
@@ -751,6 +825,15 @@ public class LetterboxdControllerTests
     }
 
     // ----- TestJellyseerr -----
+
+    [Fact]
+    public void TestJellyseerr_RequiresElevation()
+    {
+        var method = typeof(LetterboxdController).GetMethod(nameof(LetterboxdController.TestJellyseerr));
+        var attr = method!.GetCustomAttribute<AuthorizeAttribute>();
+
+        Assert.Equal("RequiresElevation", attr?.Policy);
+    }
 
     [Fact]
     public async Task TestJellyseerr_NotConfigured_ReturnsBadRequest()

@@ -166,9 +166,14 @@ public class LetterboxdController : JellyfinUserApiController
 
     [HttpGet("Stats")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult GetStats()
     {
+        // SyncHistory treats a null username as "everyone", so an unresolved caller must stop here.
         var jellyfinUsername = GetJellyfinUsername();
+        if (string.IsNullOrEmpty(jellyfinUsername))
+            return BadRequest(new { error = "Could not determine user" });
+
         var (total, success, failed, skipped, rewatches, requested) = SyncHistory.GetStats(jellyfinUsername);
         return Ok(new
         {
@@ -190,9 +195,13 @@ public class LetterboxdController : JellyfinUserApiController
     /// </summary>
     [HttpGet("History")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult GetHistory([FromQuery] int count = 50, [FromQuery] int offset = 0)
     {
         var jellyfinUsername = GetJellyfinUsername();
+        if (string.IsNullOrEmpty(jellyfinUsername))
+            return BadRequest(new { error = "Could not determine user" });
+
         var capped = Math.Min(Math.Max(count, 1), 200);
         var (events, total) = SyncHistory.GetPage(Math.Max(offset, 0), capped, jellyfinUsername);
         return Ok(new { events, total, offset = Math.Max(offset, 0), count = capped });
@@ -288,6 +297,16 @@ public class LetterboxdController : JellyfinUserApiController
             ? "Letterboxd no longer accepts an email address to sign in. Use your Letterboxd username, the name in letterboxd.com/<username>/."
             : null;
 
+    /// <summary>
+    /// Message when a Letterboxd username is already linked to another Jellyfin user, else null.
+    /// Letting a second user save it would let them sync, review and rate as that account.
+    /// </summary>
+    private static string? LinkedToOtherUserError(string userId, string? username) =>
+        !string.IsNullOrWhiteSpace(username) && Config.Accounts.Any(a => a.UserJellyfinId != userId
+            && string.Equals(a.LetterboxdUsername?.Trim(), username.Trim(), StringComparison.OrdinalIgnoreCase))
+            ? $"The Letterboxd account '{username.Trim()}' is already linked to another Jellyfin user."
+            : null;
+
     /// <summary>Letterboxd's own reason (an OAuth error_description) when present, else the sanitised message.</summary>
     internal static string DescribeLoginError(Exception ex)
     {
@@ -367,6 +386,9 @@ public class LetterboxdController : JellyfinUserApiController
 
         if (EmailAsUsernameError(request.LetterboxdUsername) is { } emailError)
             return BadRequest(new { error = emailError });
+
+        if (LinkedToOtherUserError(userId, request.LetterboxdUsername) is { } linkedError)
+            return BadRequest(new { error = linkedError });
 
         var account = Config.Accounts.FirstOrDefault(a => a.UserJellyfinId == userId);
         if (account == null)
@@ -485,6 +507,8 @@ public class LetterboxdController : JellyfinUserApiController
                 return BadRequest(new { error = $"Account #{i + 1} is missing a Letterboxd username" });
             if (EmailAsUsernameError(request.Accounts[i].LetterboxdUsername) is { } emailError)
                 return BadRequest(new { error = emailError });
+            if (LinkedToOtherUserError(userId, request.Accounts[i].LetterboxdUsername) is { } linkedError)
+                return BadRequest(new { error = linkedError });
         }
 
         // Preserve every account that doesn't belong to the calling user. The admin
@@ -564,7 +588,12 @@ public class LetterboxdController : JellyfinUserApiController
         }
     }
 
+    /// <summary>
+    /// Checks the Seerr URL and API key from the admin settings form. Admin-only: it makes the
+    /// server GET any URL and echoes the error back.
+    /// </summary>
     [HttpPost("TestJellyseerr")]
+    [Authorize(Policy = "RequiresElevation")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult> TestJellyseerr([FromBody] JellyseerrTestRequest request)
