@@ -167,7 +167,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                         Source = "playback"
                     });
                     if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
-                        await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
+                        await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, user.Username, account.LetterboxdUsername, _logger).ConfigureAwait(false);
                     continue;
                 }
 
@@ -276,7 +276,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                 try
                 {
                     using var service = await SerializdServiceFactory
-                        .CreateAuthenticatedAsync(account.Email, account.Password, _logger)
+                        .CreateAuthenticatedAsync(account.Email, account.Password, _logger, user.Username)
                         .ConfigureAwait(false);
 
                     var target = await SerializdSeasonFallback

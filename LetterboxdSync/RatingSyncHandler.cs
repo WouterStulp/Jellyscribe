@@ -377,7 +377,7 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
                         item.Name, user.Username, account.LetterboxdUsername, AuthBreaker.Sanitize(ex.Message));
                     pass.FailedAccounts.Add(accountKey);
                     if (AuthBreaker.RecordFailure(userIdN, account.LetterboxdUsername, ex.Message))
-                        await AuthBreaker.NotifyOpenedAsync(_activityManager, userId, account.LetterboxdUsername, _logger).ConfigureAwait(false);
+                        await AuthBreaker.NotifyOpenedAsync(_activityManager, userId, user.Username, account.LetterboxdUsername, _logger).ConfigureAwait(false);
                     continue;
                 }
 

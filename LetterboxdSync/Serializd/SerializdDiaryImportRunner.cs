@@ -98,7 +98,7 @@ public class SerializdDiaryImportRunner
     {
         List<SerializdDiaryEpisode> diary;
         using (var service = await SerializdServiceFactory
-                   .CreateAuthenticatedAsync(account.Email, account.Password, _logger).ConfigureAwait(false))
+                   .CreateAuthenticatedAsync(account.Email, account.Password, _logger, user.Username).ConfigureAwait(false))
         {
             diary = await service.GetDiaryEpisodesAsync().ConfigureAwait(false);
         }

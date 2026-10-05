@@ -182,21 +182,27 @@ public static class AuthBreaker
 
     /// <summary>
     /// One-time admin notification for the closed→open transition, written to
-    /// Jellyfin's activity log so it surfaces where operators actually look.
+    /// Jellyfin's activity log so it surfaces where operators actually look, and
+    /// pushed to ntfy when configured (<see cref="Notifier"/>).
     /// Callers invoke this only when <see cref="RecordFailure"/> returned true.
-    /// Null activityManager (tests, or DI not available) degrades to a no-op:
-    /// the breaker itself still works, only the notification is skipped.
+    /// Null activityManager (tests, or DI not available) skips the activity log entry:
+    /// the breaker itself still works.
     /// </summary>
     public static async System.Threading.Tasks.Task NotifyOpenedAsync(
         MediaBrowser.Model.Activity.IActivityManager? activityManager,
         Guid jellyfinUserId,
+        string? jellyfinUsername,
         string letterboxdUsername,
         ILogger logger)
     {
+        var state = GetState(jellyfinUserId.ToString("N"), letterboxdUsername);
+        await Notifier.LetterboxdLoginFailedAsync(jellyfinUsername, letterboxdUsername, state?.LastError, logger)
+            .ConfigureAwait(false);
+
         if (activityManager == null)
             return;
 
-        var since = GetState(jellyfinUserId.ToString("N"), letterboxdUsername)?.FirstFailureUtc ?? DateTime.UtcNow;
+        var since = state?.FirstFailureUtc ?? DateTime.UtcNow;
         try
         {
             await activityManager.CreateAsync(new Jellyfin.Database.Implementations.Entities.ActivityLog(

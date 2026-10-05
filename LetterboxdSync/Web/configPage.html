@@ -324,6 +324,13 @@
                                 <label class="ws-checks" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;margin:4px 0 12px;"><input type="checkbox" id="autoApproveJellyseerr" /><span>Auto-approve requests created by Jellyscribe<span class="desc" style="display:block;color:var(--ws-faint);font-size:11.5px;">Seerr only sends a request to Radarr/Sonarr once it's approved, and it decides that from the permissions of the user the request belongs to — not from this API key. Without this, requests from users who lack Auto-Approve sit in Seerr's pending queue and nothing downloads. Turn it off to review them yourself.</span></span></label>
                                 <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testJellyseerrBtn">Test connection</button><span id="jellyseerrTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                             </div>
+                            <div class="ws-panel" style="padding:18px;margin-bottom:14px;">
+                                <div class="ws-sect-title" style="margin-top:0;"><h2>Notifications (ntfy)</h2><span class="rule"></span></div>
+                                <p class="ws-muted" style="font-size:12.5px;margin-top:0;">Get a push notification when syncing needs attention: a login that keeps failing, or a film Jellyscribe gave up on. Leave the URL empty to turn this off.</p>
+                                <div class="ws-row"><label class="ws-field">Topic URL</label><input type="text" class="ws-input" id="ntfyUrl" placeholder="https://ntfy.sh/your-topic" /></div>
+                                <div class="ws-row"><label class="ws-field">Access token <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="password" class="ws-input" id="ntfyToken" placeholder="tk_…" /></div>
+                                <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testNtfyBtn">Send test</button><span id="ntfyTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
+                            </div>
                         </section>
 
                         <!-- LOGS -->
@@ -446,6 +453,8 @@
                                     // Default on: older configs predate the field, and the option exists
                                     // because pending requests never reach Radarr/Sonarr.
                                     document.getElementById('autoApproveJellyseerr').checked = c.AutoApproveJellyseerrRequests !== false;
+                                    document.getElementById('ntfyUrl').value = c.NtfyUrl || '';
+                                    document.getElementById('ntfyToken').value = c.NtfyToken || '';
                                 }).catch(function () {
                                     document.getElementById('acctGroups').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('accounts', 'loadConfig') + '</div>';
                                 });
@@ -517,6 +526,7 @@
                             document.getElementById('actNext').addEventListener('click', function () { if (self.actOffset + self.pageSize < self.actTotal) { self.actOffset += self.pageSize; self.loadActivity(false); } });
                             document.getElementById('saveIntegrationsBtn').addEventListener('click', function () { self.saveIntegrations(); });
                             document.getElementById('testJellyseerrBtn').addEventListener('click', function () { self.testJellyseerr(); });
+                            document.getElementById('testNtfyBtn').addEventListener('click', function () { self.testNtfy(); });
                             document.getElementById('logsRefreshBtn').addEventListener('click', function () { self.loadLogs(); });
                             document.getElementById('mCancelBtn').addEventListener('click', function () { document.getElementById('acctModal').classList.remove('show'); });
                             document.getElementById('mSaveBtn').addEventListener('click', function () { self.saveAccount(); });
@@ -1121,6 +1131,8 @@
                             self.config.JellyseerrUrl = document.getElementById('jellyseerrUrl').value.trim() || null;
                             self.config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
                             self.config.AutoApproveJellyseerrRequests = document.getElementById('autoApproveJellyseerr').checked;
+                            self.config.NtfyUrl = document.getElementById('ntfyUrl').value.trim() || null;
+                            self.config.NtfyToken = document.getElementById('ntfyToken').value.trim() || null;
                             ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () { Dashboard.processPluginConfigurationUpdateResult(); });
                         },
                         testJellyseerr: function () {
@@ -1131,6 +1143,16 @@
                             ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/TestJellyseerr'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, apiKey: key }) })
                                 .then(function (r) { r.json().then(function (d) { st.innerHTML = d.linkedToCurrentUser ? '<span class="ws-green">Connected. Linked to Seerr user ' + WS.escAttr(d.jellyseerrUserId) + '.</span>' : '<span style="color:var(--ws-info);">Connected, but no Seerr user linked to you.</span>'; }); },
                                     function () { st.innerHTML = '<span class="ws-red">Connection failed.</span>'; });
+                        },
+                        testNtfy: function () {
+                            var self = this;
+                            var url = document.getElementById('ntfyUrl').value.trim(), token = document.getElementById('ntfyToken').value.trim();
+                            var st = document.getElementById('ntfyTestStatus');
+                            if (!url) { st.innerHTML = '<span class="ws-red">Topic URL required.</span>'; return; }
+                            st.innerHTML = '<span class="ws-muted">Sending…</span>';
+                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Notifications/Test'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, token: token || null }) })
+                                .then(function () { st.innerHTML = '<span class="ws-green">Sent. Check your ntfy app.</span>'; },
+                                    function (err) { Promise.resolve(self.errText(err)).then(function (msg) { st.innerHTML = '<span class="ws-red">Send failed: ' + self.escAttr(msg) + '</span>'; }); });
                         },
                         loadLogs: function () {
                             document.getElementById('logsOutput').textContent = 'Loading…';
