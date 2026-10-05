@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.9.0.0",
+        "changelog": "The Jellyscribe link in Jellyfin's sidebar used to appear only if you had also installed the File Transformation plugin, so many people never saw it and had to dig through the dashboard to find their settings. Jellyscribe now adds the link itself, the same way Jellyfin Enhanced adds its own menu, and nothing on your server's disk is changed. If you already use File Transformation, nothing changes for you and you still get exactly one link. The link also now works on servers that run Jellyfin under a sub-path such as /jellyfin, where it used to point at the wrong address. On Jellyfin 12, the web client moved its menu into the profile button, so the link doesn't show there yet; open Jellyscribe from Dashboard, Plugins instead.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.9.0/jellyfin-plugin-letterboxd-v2.9.0.zip",
+        "checksum": "26997ffd96997b3b156f1dca4896ceb7",
+        "timestamp": "2026-10-05T06:13:22Z"
+      },
+      {
         "version": "2.8.0.0",
         "changelog": "Until now the Verify login button only worked for Serializd. For a Letterboxd account it said the login would be checked on the first sync, so a wrong password or a mistyped name went unnoticed until something quietly failed to appear on Letterboxd. Verify login now works for Letterboxd too: it signs in the same way syncing will and tells you whether it got in, and if not, the reason Letterboxd gave. It also catches a common mix-up: Letterboxd no longer lets you sign in with your email address, so Jellyscribe now asks for your Letterboxd username instead and explains why if you enter an email.",
         "targetAbi": "10.11.9.0",
