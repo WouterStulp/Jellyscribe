@@ -166,6 +166,10 @@
                 #letterboxdSyncConfigPage .ws-checks label { display: flex; gap: 9px; align-items: flex-start; cursor: pointer; font-size: 13px; }
                 #letterboxdSyncConfigPage .ws-checks input { margin-top: 2px; }
                 #letterboxdSyncConfigPage .ws-checks .desc { display: block; color: var(--ws-faint); font-size: 11.5px; }
+                #letterboxdSyncConfigPage .ws-checks > .ws-label { margin-top: 8px; }
+                #letterboxdSyncConfigPage .ws-checks > .ws-label:first-child { margin-top: 0; }
+                #letterboxdSyncConfigPage .ws-adv { margin-top: 8px; }
+                #letterboxdSyncConfigPage .ws-adv summary { cursor: pointer; margin-bottom: 9px; }
                 #letterboxdSyncConfigPage .ws-modal-ov { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1000; }
                 #letterboxdSyncConfigPage .ws-modal-ov.show { display: grid; place-items: center; padding: 20px; }
                 #letterboxdSyncConfigPage .ws-modal { position: relative; background: var(--ws-surface); border: 1px solid var(--ws-border-strong); border-radius: 14px; padding: 22px; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; box-shadow: 0 30px 80px -20px rgba(0,0,0,.7); }
@@ -871,26 +875,37 @@
 
                         checksFor: function (svc, a) {
                             a = a || {};
-                            var rows = [
+                            var noSeerr = !(this.config && this.config.JellyseerrUrl);
+                            var sync = [
                                 ['Enabled', 'chkEnabled', a.Enabled !== false, 'Master switch. When off, nothing syncs for this account.'],
-                                ['Mark favourites as liked', 'chkFav', !!a.SyncFavorites, 'Favourite in Jellyfin → hearted on the diary.']
-                            // Always rendered; onSvcChange shows it only for Letterboxd, so switching the
-                            // service on a new account reveals it without re-rendering the other boxes.
-                            ].concat([['Sync ratings to Letterboxd', 'chkRatings', a.SyncRatings !== false, 'Rate in Jellyfin after watching → the Letterboxd film rating.']]).concat([
-                                ['Only sync recently played', 'chkDate', !!a.EnableDateFilter, 'Limit the catch-up to the last N days.'],
+                                ['Mark favourites as liked', 'chkFav', !!a.SyncFavorites, 'Favourite in Jellyfin → hearted on the diary.'],
+                                // Always rendered; onSvcChange shows it only for Letterboxd, so switching the
+                                // service on a new account reveals it without re-rendering the other boxes.
+                                ['Sync ratings to Letterboxd', 'chkRatings', a.SyncRatings !== false, 'Rate in Jellyfin after watching → the Letterboxd film rating.'],
+                                ['Import diary as watched', 'chkImport', !!a.EnableDiaryImport, 'Reverse: mark Jellyfin played from the diary.'],
                                 ['Primary account', 'chkPrimary', !!a.IsPrimary, 'Wins on tie-breaks when a user has several.'],
+                                ['Only sync recently played', 'chkDate', !!a.EnableDateFilter, 'Limit the catch-up to the last N days.']
+                            ];
+                            // Seerr rows stay rendered when Seerr isn't configured, hidden, so saving keeps their values.
+                            var watch = [
                                 ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.SyncWatchlist : !!a.EnableWatchlistSync, svc === 'serializd' ? 'Watchlist → Jellyfin collection + playlist.' : 'Watchlist → Jellyfin playlist.'],
-                                ['Auto-request via Seerr', 'chkSeerr', !!a.AutoRequestWatchlist, 'Watchlisted but missing from the library → request via Seerr.'],
-                                ['Backfill Seerr requests', 'chkBackfill', !!a.BackfillAvailableRequests, 'Also attribute a Seerr request for already-available titles (requester trail).'],
-                                ['Mirror watchlist to Seerr', 'chkMirror', !!a.MirrorJellyseerrWatchlist, 'Push this watchlist into the Seerr user\'s own watchlist (primary account only).'],
+                                ['Auto-request via Seerr', 'chkSeerr', !!a.AutoRequestWatchlist, 'Watchlisted but missing from the library → request via Seerr.', noSeerr],
+                                ['Mirror watchlist to Seerr', 'chkMirror', !!a.MirrorJellyseerrWatchlist, 'Push this watchlist into the Seerr user\'s own watchlist (primary account only).', noSeerr]
+                            ];
+                            var advanced = [
                                 ['Skip already-synced', 'chkSkip', a.SkipPreviouslySynced !== false, 'Use local history to avoid re-logging.'],
                                 ['Stop on first failure', 'chkStop', !!a.StopOnFailure, 'Halt this account on the first error.'],
-                                ['Import diary as watched', 'chkImport', !!a.EnableDiaryImport, 'Reverse: mark Jellyfin played from the diary.']
-                            ]);
-                            return rows.map(function (r) {
-                                return '<label><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>';
-                            }).join('') +
-                            '<div class="ws-row" id="dateDaysRow" style="display:' + (a.EnableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.DateFilterDays || 7) + '" /></div>';
+                                ['Backfill Seerr requests', 'chkBackfill', !!a.BackfillAvailableRequests, 'Also attribute a Seerr request for already-available titles (requester trail).', noSeerr]
+                            ];
+                            var html = function (rows) {
+                                return rows.map(function (r) {
+                                    return '<label' + (r[4] ? ' style="display:none;"' : '') + '><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>';
+                                }).join('');
+                            };
+                            return '<div class="ws-label">Sync</div>' + html(sync) +
+                                '<div class="ws-row" id="dateDaysRow" style="display:' + (a.EnableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.DateFilterDays || 7) + '" /></div>' +
+                                '<div class="ws-label">' + (noSeerr ? 'Watchlist' : 'Watchlist &amp; Seerr') + '</div>' + html(watch) +
+                                '<details class="ws-adv"><summary class="ws-label">Advanced</summary><div class="ws-checks">' + html(advanced) + '</div></details>';
                         },
                         // Stored ids for libraries this page listed are replaced by what is ticked; ids for
                         // libraries it did not list are kept, so a partial or failed library list can never
@@ -989,6 +1004,7 @@
                         },
                         deleteAccount: function () {
                             var self = this, orig = self.editing.original; if (!orig) return;
+                            if (!confirm('Remove this account?')) return;
                             var prevLb = self.config.Accounts, prevSz = self.config.SerializdAccounts;
                             if (self.editing.svc === 'serializd') self.config.SerializdAccounts = (self.config.SerializdAccounts || []).filter(function (x) { return x !== orig; });
                             else self.config.Accounts = (self.config.Accounts || []).filter(function (x) { return x !== orig; });

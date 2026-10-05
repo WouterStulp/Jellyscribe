@@ -153,6 +153,10 @@
                 #letterboxdUserPage .ws-checks label { display: flex; gap: 9px; align-items: flex-start; cursor: pointer; font-size: 13px; }
                 #letterboxdUserPage .ws-checks input { margin-top: 2px; }
                 #letterboxdUserPage .ws-checks .desc { display: block; color: var(--ws-faint); font-size: 11.5px; }
+                #letterboxdUserPage .ws-checks > .ws-label { margin-top: 8px; }
+                #letterboxdUserPage .ws-checks > .ws-label:first-child { margin-top: 0; }
+                #letterboxdUserPage .ws-adv { margin-top: 8px; }
+                #letterboxdUserPage .ws-adv summary { cursor: pointer; margin-bottom: 9px; }
                 #letterboxdUserPage .ws-modal-ov { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1000; }
                 #letterboxdUserPage .ws-modal-ov.show { display: grid; place-items: center; padding: 20px; }
                 #letterboxdUserPage .ws-modal { position: relative; background: var(--ws-surface); border: 1px solid var(--ws-border-strong); border-radius: 14px; padding: 22px; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; box-shadow: 0 30px 80px -20px rgba(0,0,0,.7); }
@@ -703,22 +707,33 @@
                         },
                         checksFor: function (svc, a) {
                             a = a || {};
-                            var rows = [['Enabled', 'chkEnabled', a.enabled !== false, 'Master switch for this account.'],
-                                ['Mark favourites as liked', 'chkFav', !!a.syncFavorites, 'Favourite in Jellyfin → hearted on the diary.']]
+                            var sync = [
+                                ['Enabled', 'chkEnabled', a.enabled !== false, 'Master switch for this account.'],
+                                ['Mark favourites as liked', 'chkFav', !!a.syncFavorites, 'Favourite in Jellyfin → hearted on the diary.'],
                                 // Always rendered; onSvcChange shows it only for Letterboxd, so switching the
                                 // service on a new account reveals it without re-rendering the other boxes.
-                                .concat([['Sync ratings to Letterboxd', 'chkRatings', a.syncRatings !== false, 'Rate in Jellyfin after watching → your Letterboxd film rating.']])
-                                .concat([['Only sync recently played', 'chkDate', !!a.enableDateFilter, 'Limit the catch-up to the last N days.'],
+                                ['Sync ratings to Letterboxd', 'chkRatings', a.syncRatings !== false, 'Rate in Jellyfin after watching → your Letterboxd film rating.'],
+                                ['Import diary as watched', 'chkImport', !!a.enableDiaryImport, 'Mark Jellyfin played from the diary.'],
                                 ['Primary account', 'chkPrimary', !!a.isPrimary, 'Wins on tie-breaks when you have several.'],
+                                ['Only sync recently played', 'chkDate', !!a.enableDateFilter, 'Limit the catch-up to the last N days.']
+                            ];
+                            var watch = [
                                 ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.syncWatchlist : !!a.enableWatchlistSync, 'Watchlist → Jellyfin ' + (svc === 'serializd' ? 'collection + playlist.' : 'playlist.')],
                                 ['Auto-request via Seerr', 'chkSeerr', !!a.autoRequestWatchlist, 'Missing from the library → request via Seerr.'],
-                                ['Backfill Seerr requests', 'chkBackfill', !!a.backfillAvailableRequests, 'Also attribute a Seerr request for already-available titles.'],
-                                ['Mirror watchlist to Seerr', 'chkMirror', !!a.mirrorJellyseerrWatchlist, 'Push this watchlist into your Seerr watchlist (primary account only).'],
+                                ['Mirror watchlist to Seerr', 'chkMirror', !!a.mirrorJellyseerrWatchlist, 'Push this watchlist into your Seerr watchlist (primary account only).']
+                            ];
+                            var advanced = [
                                 ['Skip already-synced', 'chkSkip', a.skipPreviouslySynced !== false, 'Avoid re-logging via local history.'],
                                 ['Stop on first failure', 'chkStop', !!a.stopOnFailure, 'Halt on the first error.'],
-                                ['Import diary as watched', 'chkImport', !!a.enableDiaryImport, 'Mark Jellyfin played from the diary.']]);
-                            return rows.map(function (r) { return '<label><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>'; }).join('') +
-                                '<div class="ws-row" id="dateDaysRow" style="display:' + (a.enableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.dateFilterDays || 7) + '" /></div>';
+                                ['Backfill Seerr requests', 'chkBackfill', !!a.backfillAvailableRequests, 'Also attribute a Seerr request for already-available titles.']
+                            ];
+                            var html = function (rows) {
+                                return rows.map(function (r) { return '<label><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>'; }).join('');
+                            };
+                            return '<div class="ws-label">Sync</div>' + html(sync) +
+                                '<div class="ws-row" id="dateDaysRow" style="display:' + (a.enableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.dateFilterDays || 7) + '" /></div>' +
+                                '<div class="ws-label">Watchlist &amp; Seerr</div>' + html(watch) +
+                                '<details class="ws-adv"><summary class="ws-label">Advanced</summary><div class="ws-checks">' + html(advanced) + '</div></details>';
                         },
                         onSvcChange: function () { var svc = document.getElementById('mSvc').value; document.getElementById('mUserLabel').textContent = svc === 'serializd' ? 'Email or username' : 'Letterboxd username'; document.getElementById('mAuthBlobRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; document.getElementById('mUserAgentRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; var ratingsBox = document.getElementById('chkRatings'); if (ratingsBox) ratingsBox.closest('label').style.display = svc === 'letterboxd' ? '' : 'none'; var uname = document.getElementById('mUsername').value.trim(); document.getElementById('mWatchName').placeholder = svc === 'serializd' ? 'Serializd Watchlist' : ('Letterboxd Watchlist' + (uname ? ' (' + uname + ')' : '')); },
                         openAccount: function (ref) {
@@ -777,6 +792,7 @@
                         },
                         deleteAccount: function () {
                             var self = this; if (!self.editing) return;
+                            if (!confirm('Remove this account?')) return;
                             var tv = self.editing.svc === 'serializd', prev = (tv ? self.sz : self.lb).slice();
                             (tv ? self.sz : self.lb).splice(self.editing.i, 1);
                             document.getElementById('mStatus').textContent = 'Removing…';
