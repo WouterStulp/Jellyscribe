@@ -398,7 +398,7 @@ public class LetterboxdSyncRunner
         {
             _logger.LogError("Auth failed for {Username}: {Message}", user.Username, ex.Message);
             if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
-                await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
+                await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, user.Username, account.LetterboxdUsername, _logger).ConfigureAwait(false);
             SyncProgress.Complete(SyncProgress.TrackLetterboxd);
             return;
         }
@@ -544,6 +544,14 @@ public class LetterboxdSyncRunner
                 failures.Add(failure);
                 failed++;
                 SyncProgress.IncrementProcessed(SyncProgress.TrackLetterboxd);
+
+                // Abandoned films are filtered out before this loop, so reaching the threshold
+                // here is the one run that gives up on the film.
+                var streak = SyncHistory.GetFailureStreak(user.Username ?? string.Empty, tmdbId, lbAccount);
+                if (ShouldAbandon(streak))
+                    await Notifier.GaveUpAsync(movie.Name, user.Username, tmdbId,
+                        streak.Permanent >= MaxConsecutiveSyncFailures ? streak.Permanent : streak.Transient, ex.Message, _logger)
+                        .ConfigureAwait(false);
 
                 if (account.StopOnFailure)
                 {

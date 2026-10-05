@@ -4,7 +4,7 @@ using System.Linq;
 namespace LetterboxdSync.Configuration;
 
 /// <summary>
-/// Secrets (passwords, raw cookies, the Seerr API key) are write-only: no JSON
+/// Secrets (passwords, raw cookies, the Seerr API key, the ntfy token) are write-only: no JSON
 /// response carries them, so every client saves without them. These rules turn such a save back
 /// into the intended change: an empty value keeps the stored secret, a non-empty one replaces it,
 /// and an explicit clear flag drops it. A stored account secret carries over to the same login
@@ -75,6 +75,8 @@ internal static class SecretMerge
 
         incoming.JellyseerrApiKey = TypedClearedOrKept(incoming.JellyseerrApiKey, incoming.ClearJellyseerrApiKey, stored.JellyseerrApiKey);
         incoming.ClearJellyseerrApiKey = false;
+        incoming.NtfyToken = TypedClearedOrKept(incoming.NtfyToken, incoming.ClearNtfyToken, stored.NtfyToken);
+        incoming.ClearNtfyToken = false;
     }
 
     /// <summary>

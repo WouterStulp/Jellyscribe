@@ -78,4 +78,40 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </para>
     /// </summary>
     public bool AutoApproveJellyseerrRequests { get; set; } = true;
+
+    /// <summary>
+    /// Full ntfy topic URL (e.g. "https://ntfy.sh/mytopic") that receives "sync needs attention"
+    /// alerts. Empty disables notifications.
+    /// </summary>
+    public string? NtfyUrl { get; set; }
+
+    /// <summary>Optional ntfy access token, sent as a bearer token.</summary>
+    [XmlIgnore]
+    [JsonIgnore]
+    public string? NtfyToken { get; set; }
+
+    /// <summary>Write-only JSON form of <see cref="NtfyToken"/>. See <see cref="Account.LetterboxdPasswordInput"/>.</summary>
+    [XmlIgnore]
+    [JsonPropertyName("NtfyToken")]
+    public string? NtfyTokenInput
+    {
+        internal get => NtfyToken;
+        set => NtfyToken = value;
+    }
+
+    [XmlIgnore]
+    public bool HasNtfyToken => !string.IsNullOrEmpty(NtfyToken);
+
+    /// <summary>Write-only: true on a config POST drops the stored token, which an empty value would keep.</summary>
+    [XmlIgnore]
+    public bool ClearNtfyToken { internal get; set; }
+
+    /// <summary>Encrypted on-disk form of <see cref="NtfyToken"/>, same scheme as <see cref="JellyseerrApiKeyProtected"/>.</summary>
+    [XmlElement("NtfyToken")]
+    [JsonIgnore]
+    public string? NtfyTokenProtected
+    {
+        get => SecretProtector.Protect(NtfyToken);
+        set => NtfyToken = SecretProtector.Unprotect(value);
+    }
 }

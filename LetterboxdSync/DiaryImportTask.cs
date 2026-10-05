@@ -134,7 +134,7 @@ public class DiaryImportTask : IScheduledTask
                     _logger.LogError("Auth failed for {Username} as {LbUser}: {Message}",
                         user.Username, account.LetterboxdUsername, ex.Message);
                     if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
-                        await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
+                        await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, user.Username, account.LetterboxdUsername, _logger).ConfigureAwait(false);
                     continue;
                 }
 

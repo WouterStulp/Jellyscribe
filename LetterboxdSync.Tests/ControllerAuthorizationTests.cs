@@ -34,6 +34,7 @@ public class ControllerAuthorizationTests
         "LetterboxdController.GetAuthBreakers",
         "LetterboxdController.GetLogs",
         "LetterboxdController.TestJellyseerr",
+        "LetterboxdController.TestNotification",
     };
 
     private sealed record ActionInfo(string Name, bool Anonymous, bool Authorized, bool AdminOnly, bool Routed);

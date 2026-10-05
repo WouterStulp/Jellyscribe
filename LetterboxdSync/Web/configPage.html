@@ -127,6 +127,13 @@
                                 <label class="ws-checks" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;margin:4px 0 12px;"><input type="checkbox" id="autoApproveJellyseerr" /><span>Auto-approve requests created by Jellyscribe<span class="desc" style="display:block;color:var(--ws-faint);font-size:11.5px;">Requests are made as each user's own Seerr account, so Seerr only approves them straight away for users with Auto-Approve. With this on, Jellyscribe approves the rest with this API key so they reach Radarr/Sonarr. Turn it off to review them in Seerr yourself.</span></span></label>
                                 <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testJellyseerrBtn">Test connection</button><span id="jellyseerrTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                             </div>
+                            <div class="ws-panel" style="padding:18px;margin-bottom:14px;">
+                                <div class="ws-sect-title" style="margin-top:0;"><h2>Notifications (ntfy)</h2><span class="rule"></span></div>
+                                <p class="ws-muted" style="font-size:12.5px;margin-top:0;">Get a push notification when syncing needs attention: a login that keeps failing, or a film Jellyscribe gave up on. Leave the URL empty to turn this off.</p>
+                                <div class="ws-row"><label class="ws-field" for="ntfyUrl">Topic URL</label><input type="text" class="ws-input" id="ntfyUrl" placeholder="https://ntfy.sh/your-topic" /></div>
+                                <div class="ws-row"><label class="ws-field" for="ntfyToken">Access token <span class="ws-muted" style="text-transform:none;">(optional)</span><span class="ws-saved" id="ntfyTokenSaved" hidden>Saved</span></label><input type="password" class="ws-input" id="ntfyToken" autocomplete="new-password" placeholder="tk_…" /><label class="ws-muted" id="ntfyTokenClearRow" style="display:none;gap:7px;align-items:center;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="ntfyTokenClear" /> Remove saved token</label></div>
+                                <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testNtfyBtn">Send test</button><span id="ntfyTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
+                            </div>
                         </section>
 
                         <!-- LOGS -->
@@ -249,6 +256,7 @@
                             byId('actNext').addEventListener('click', function () { if (self.actOffset + self.pageSize < self.actTotal) { self.actOffset += self.pageSize; self.loadActivity(false); } });
                             byId('saveIntegrationsBtn').addEventListener('click', function () { self.saveIntegrations(); });
                             byId('testJellyseerrBtn').addEventListener('click', function () { self.testJellyseerr(); });
+                            byId('testNtfyBtn').addEventListener('click', function () { self.testNtfy(); });
                             byId('logsRefreshBtn').addEventListener('click', function () { self.loadLogs(); });
                             byId('acctGroups').addEventListener('click', function (e) {
                                 var add = e.target.closest('[data-add-for]');
@@ -283,6 +291,8 @@
                                     // Default on: older configs predate the field, and the option exists
                                     // because pending requests never reach Radarr/Sonarr.
                                     byId('autoApproveJellyseerr').checked = c.AutoApproveJellyseerrRequests !== false;
+                                    byId('ntfyUrl').value = c.NtfyUrl || '';
+                                    self.fillSecret('ntfyToken', !!c.HasNtfyToken, 'Leave blank to keep the saved token', 'tk_…');
                                 }).catch(function () {
                                     byId('acctGroups').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('accounts', 'loadConfig') + '</div>';
                                 });
@@ -319,6 +329,7 @@
                                 return ApiClient.getPluginConfiguration(self.PluginId).then(function (c) {
                                     self.config = c;
                                     self.fillSecret('jellyseerrApiKey', !!c.HasJellyseerrApiKey, 'Leave blank to keep the saved key', 'Settings → General → API Key');
+                                    self.fillSecret('ntfyToken', !!c.HasNtfyToken, 'Leave blank to keep the saved token', 'tk_…');
                                     self.renderAccounts();
                                 }, function () { });
                             });
@@ -584,6 +595,9 @@
                                 c.JellyseerrApiKey = g('jellyseerrApiKey').value.trim() || null;
                                 c.ClearJellyseerrApiKey = !c.JellyseerrApiKey && g('jellyseerrApiKeyClear').checked;
                                 c.AutoApproveJellyseerrRequests = g('autoApproveJellyseerr').checked;
+                                c.NtfyUrl = g('ntfyUrl').value.trim() || null;
+                                c.NtfyToken = g('ntfyToken').value.trim() || null;
+                                c.ClearNtfyToken = !c.NtfyToken && g('ntfyTokenClear').checked;
                             }).then(function () {
                                 btn.disabled = false;
                                 st.innerHTML = '<span class="ws-green">Saved</span>';
@@ -602,6 +616,16 @@
                             ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/TestJellyseerr'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, apiKey: key || null }) })
                                 .then(function (r) { r.json().then(function (d) { st.innerHTML = d.linkedToCurrentUser ? '<span class="ws-green">Connected. Linked to Seerr user ' + WS.escAttr(d.jellyseerrUserId) + '.</span>' : '<span style="color:var(--ws-info);">Connected, but no Seerr user linked to you.</span>'; }); },
                                     function () { st.innerHTML = '<span class="ws-red">Connection failed.</span>'; });
+                        },
+                        testNtfy: function () {
+                            var self = this, url = byId('ntfyUrl').value.trim(), token = byId('ntfyToken').value.trim();
+                            var st = byId('ntfyTestStatus');
+                            if (!url) { st.innerHTML = '<span class="ws-red">Topic URL required.</span>'; return; }
+                            st.innerHTML = '<span class="ws-muted">Sending…</span>';
+                            // A blank token tests the saved one; the server only sends it to the saved URL.
+                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Notifications/Test'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, token: token || null }) })
+                                .then(function () { st.innerHTML = '<span class="ws-green">Sent. Check your ntfy app.</span>'; },
+                                    function (err) { Promise.resolve(self.errText(err)).then(function (msg) { st.innerHTML = '<span class="ws-red">Send failed: ' + self.escAttr(msg) + '</span>'; }); });
                         },
                         loadLogs: function () {
                             byId('logsOutput').textContent = 'Loading…';

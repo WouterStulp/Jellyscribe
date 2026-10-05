@@ -43,8 +43,9 @@ public class WriteOnlySecretsTests : IDisposable
     private const string SzPassword = "hunter2-serializd";
     private const string ApiKey = "seerr-api-key-123";
     private const string SeerrUrl = "http://seerr.local:5055";
+    private const string NtfyToken = "tk_ntfy-token-123";
 
-    private static readonly string[] Secrets = { Password, Cookies, SzPassword, ApiKey };
+    private static readonly string[] Secrets = { Password, Cookies, SzPassword, ApiKey, NtfyToken };
 
     private readonly string _keyDir;
 
@@ -86,6 +87,8 @@ public class WriteOnlySecretsTests : IDisposable
         });
         config.JellyseerrUrl = SeerrUrl;
         config.JellyseerrApiKey = ApiKey;
+        config.NtfyUrl = "https://ntfy.sh/jellyscribe-test";
+        config.NtfyToken = NtfyToken;
     }
 
     /// <summary>
@@ -150,8 +153,10 @@ public class WriteOnlySecretsTests : IDisposable
         Assert.Contains("\"HasPassword\":true", json);
         Assert.Contains("\"HasRawCookies\":true", json);
         Assert.Contains("\"HasJellyseerrApiKey\":true", json);
+        Assert.Contains("\"HasNtfyToken\":true", json);
         Assert.DoesNotContain("ClearRawCookies", json);
         Assert.DoesNotContain("ClearJellyseerrApiKey", json);
+        Assert.DoesNotContain("ClearNtfyToken", json);
         AssertNoSecret(JsonSerializer.Serialize(h.Config, h.Config.GetType(), JsonDefaults.Options));
     }
 
@@ -168,6 +173,7 @@ public class WriteOnlySecretsTests : IDisposable
         Assert.Equal(Cookies, account.RawCookies);
         Assert.Equal(SzPassword, h.Config.SerializdAccounts.Single().Password);
         Assert.Equal(ApiKey, h.Config.JellyseerrApiKey);
+        Assert.Equal(NtfyToken, h.Config.NtfyToken);
     }
 
     [Fact]
@@ -181,6 +187,7 @@ public class WriteOnlySecretsTests : IDisposable
         body["Accounts"]![0]!["ClearRawCookies"] = true;
         body["SerializdAccounts"]![0]!["Password"] = "new-sz-password";
         body["JellyseerrApiKey"] = "new-seerr-key";
+        body["ClearNtfyToken"] = true;
         JellyfinPost(body.ToJsonString());
 
         var account = h.Config.Accounts.Single();
@@ -188,6 +195,7 @@ public class WriteOnlySecretsTests : IDisposable
         Assert.Null(account.RawCookies);
         Assert.Equal("new-sz-password", h.Config.SerializdAccounts.Single().Password);
         Assert.Equal("new-seerr-key", h.Config.JellyseerrApiKey);
+        Assert.Null(h.Config.NtfyToken);
     }
 
     [Fact]
