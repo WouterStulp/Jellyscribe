@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using LetterboxdSync.Serializd;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Model.Entities;
 using NSubstitute;
 using Xunit;
 
@@ -98,5 +100,11 @@ public class SerializdShowStatusTests : IDisposable
     public void WithoutASeries_TheShowIsNotFinished()
     {
         Assert.False(SerializdShowStatus.IsFinished(null, _ => true));
+    }
+
+    [Fact]
+    public void AShowStillAiring_IsNotFinishedEvenWhenCaughtUp()
+    {
+        Assert.False(SerializdShowStatus.IsFinished(new Series { Status = SeriesStatus.Continuing }, _ => true));
     }
 }
