@@ -54,20 +54,48 @@ public static class SerializdActivity
         {
             if (File.Exists(DataPath))
             {
+                var unreadable = 0;
                 foreach (var line in File.ReadLines(DataPath))
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     try { var e = JsonSerializer.Deserialize<SyncEvent>(line); if (e != null) _events.Add(e); }
-                    catch { }
+                    catch { unreadable++; }
                 }
+
+                if (unreadable > 0)
+                    _logger?.LogWarning("Skipped {Count} unreadable lines in Serializd activity {Path}", unreadable, DataPath);
             }
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Failed to load Serializd activity from {Path}", DataPath);
+            return _events; // never compact (and so rewrite) a partial read
+        }
+
+        // Same cap as the Letterboxd history: a failing episode appends a row every run.
+        var dropped = SyncHistory.Compact(_events);
+        if (dropped > 0)
+        {
+            Save(_events);
+            _logger?.LogInformation("Compacted Serializd activity: dropped {Count} old skipped/failed events", dropped);
         }
 
         return _events;
+    }
+
+    private static void Save(List<SyncEvent> events)
+    {
+        try
+        {
+            // Write beside the file and swap it in, so a crash mid-write can't truncate the feed.
+            var tmp = DataPath + ".tmp";
+            File.WriteAllLines(tmp, events.Select(e => JsonSerializer.Serialize(e)));
+            File.Move(tmp, DataPath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to save Serializd activity to {Path}", DataPath);
+        }
     }
 
     public static void Record(SyncEvent evt)
@@ -98,14 +126,7 @@ public static class SerializdActivity
             var events = Load();
             var stamped = SyncHistory.StampMissingUserIds(events);
             if (stamped == 0) return 0;
-            try
-            {
-                File.WriteAllLines(DataPath, events.Select(e => JsonSerializer.Serialize(e)));
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Failed to save Serializd activity to {Path}", DataPath);
-            }
+            Save(events);
             return stamped;
         }
     }

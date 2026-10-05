@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using LetterboxdSync.Serializd;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Model.Entities;
 using NSubstitute;
 using Xunit;
 
@@ -51,6 +53,27 @@ public class SerializdShowStatusTests : IDisposable
 
         await service.DidNotReceive().SetCurrentlyWatchingAsync(Arg.Any<int>());
         Assert.False(SerializdSyncHistory.Has(UserId, Email, Show, 0, 0, SerializdSyncHistory.KindCurrentlyWatching));
+        Assert.True(SerializdSyncHistory.Has(UserId, Email, Show, 0, 0, SerializdSyncHistory.KindFinished));
+    }
+
+    [Fact]
+    public void FinishedShow_IsOnlyCheckedOnce()
+    {
+        var checks = 0;
+        bool Finished() { checks++; return true; }
+
+        Assert.False(SerializdShowStatus.IsPending(UserId, Email, Show, Finished));
+        Assert.False(SerializdShowStatus.IsPending(UserId, Email, Show, Finished));
+
+        Assert.Equal(1, checks);
+    }
+
+    [Fact]
+    public void FinishedMarker_IsTrackedPerAccount()
+    {
+        Assert.False(SerializdShowStatus.IsPending(UserId, Email, Show, () => true));
+
+        Assert.True(SerializdShowStatus.IsPending(UserId, "other@example.com", Show, () => false));
     }
 
     [Fact]
@@ -77,5 +100,11 @@ public class SerializdShowStatusTests : IDisposable
     public void WithoutASeries_TheShowIsNotFinished()
     {
         Assert.False(SerializdShowStatus.IsFinished(null, _ => true));
+    }
+
+    [Fact]
+    public void AShowStillAiring_IsNotFinishedEvenWhenCaughtUp()
+    {
+        Assert.False(SerializdShowStatus.IsFinished(new Series { Status = SeriesStatus.Continuing }, _ => true));
     }
 }
