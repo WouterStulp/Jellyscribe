@@ -10,6 +10,7 @@ using LetterboxdSync.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Model.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using Xunit;
@@ -776,6 +777,15 @@ public class LetterboxdControllerTests
     }
 
     // ----- GetLogs -----
+
+    [Fact]
+    public void GetLogs_RequiresElevation()
+    {
+        var method = typeof(LetterboxdController).GetMethod(nameof(LetterboxdController.GetLogs));
+        var attr = method!.GetCustomAttribute<AuthorizeAttribute>();
+
+        Assert.Equal("RequiresElevation", attr?.Policy);
+    }
 
     [Fact]
     public void GetLogs_LogDirectoryEmpty_ReturnsNoFiles()
