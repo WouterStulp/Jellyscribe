@@ -160,10 +160,15 @@ window.JellyscribeShared = {
         if (s === 'hide-skipped') return st !== 'Skipped';
         return st === s;
     },
-    whenOf: function (e) {
-        var ts = new Date(e.Timestamp);
-        return ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // dd-MM-yy, plus HH:mm (24-hour) when withTime; local time.
+    formatDate: function (value, withTime) {
+        var d = new Date(value);
+        if (isNaN(d.getTime())) return '?';
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        var date = pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getFullYear() % 100);
+        return withTime ? date + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : date;
     },
+    whenOf: function (e) { return this.formatDate(e.Timestamp, true); },
     pillHtml: function (status, reason) {
         status = this.esc(status);
         if (!reason) return '<span class="ws-pill ' + status + '">' + status + '</span>';
