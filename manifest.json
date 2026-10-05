@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.7.0.0",
+        "changelog": "Jellyscribe sends your rating along when it logs a film to your Letterboxd diary, and that happens the moment the credits roll. Most people rate afterwards, and until now those ratings never left Jellyfin: the film was already logged, so later syncs skipped it. Jellyscribe now notices when you change a film's rating and, about ten seconds after you settle on a score, sets it as your Letterboxd rating for that film. Jellyfin's own web app has no star rating, only favourites, so the usual way in is a review written with Jellyfin Enhanced 12.10 or later with its option to copy review stars into Jellyfin switched on; ratings from any other app that saves them to Jellyfin work too. Only real changes are sent: ratings already in Jellyfin when you update are left alone until you change them, and favouriting or rewatching a film leaves Letterboxd alone. If Letterboxd is briefly unreachable, the rating is retried a few times. As on Letterboxd itself, rating a film marks it watched and takes it off your watchlist. Clearing a rating in Jellyfin does not remove it from Letterboxd, and some apps, Infuse among them, keep ratings to themselves and never save them to Jellyfin, so those still cannot be synced. Each Letterboxd account has a new Sync ratings to Letterboxd switch, on by default.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.7.0/jellyfin-plugin-letterboxd-v2.7.0.zip",
+        "checksum": "8714f1777689c6a683dffddfdf4bbd2c",
+        "timestamp": "2026-10-05T05:59:09Z"
+      },
+      {
         "version": "2.6.0.0",
         "changelog": "Until now Jellyscribe sent every film and episode you finished to your linked accounts, whichever library it lived in. If you already track some of that somewhere else, anime on AniList for example, those watches were turning up on Letterboxd or Serializd as well, and the only way to stop it was to switch the whole account off. Each linked account now has an Excluded libraries list in its settings. Tick a library there and nothing from it is sent to that account, whether by the daily catch-up or the moment you finish watching. The setting is per account, so two people sharing a Jellyfin login can make different choices, and a library you leave unticked syncs exactly as before. Exclusion only applies from now on: anything already logged stays where it is, and diary import and watchlist sync still look at every library.",
         "targetAbi": "10.11.9.0",
