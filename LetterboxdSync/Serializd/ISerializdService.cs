@@ -52,6 +52,11 @@ public interface ISerializdService : IDisposable
 
     Task SetCurrentlyWatchingAsync(int showTmdbId);
 
+    /// <summary>Marks the whole show watched (every season with a number above 0).</summary>
+    Task SetWatchedAsync(int showTmdbId);
+
+    Task RemoveCurrentlyWatchingAsync(int showTmdbId);
+
     /// <summary>
     /// Returns the authenticated user's Serializd watchlist: each show (TMDb id) plus the
     /// specific season numbers watchlisted (empty = the whole show / no season detail).

@@ -171,6 +171,7 @@ public class SerializdPlaybackTests : IDisposable
 
         await svc.Received(1).SetCurrentlyWatchingAsync(1396);
         await svc.Received(1).CreateEpisodeLogAsync(1396, 3572, 5, Arg.Any<DateTime>(), Arg.Any<int?>(), false);
+        await svc.DidNotReceive().SetWatchedAsync(Arg.Any<int>());
     }
 
     [Fact]
@@ -194,6 +195,32 @@ public class SerializdPlaybackTests : IDisposable
 
         await svc.DidNotReceive().SetCurrentlyWatchingAsync(Arg.Any<int>());
         await svc.Received(1).CreateEpisodeLogAsync(1396, 3572, 4, Arg.Any<DateTime>(), Arg.Any<int?>(), false);
+    }
+
+    [Fact]
+    public async Task Episode_FinishingTheShow_MarksItWatchedOnce()
+    {
+        var (user, idHex) = MakeUser();
+        AddSerializdAccount(idHex);
+        PlaybackHandler.SeriesTmdbIdReader = _ => 1396;
+        var checks = 0;
+        SerializdShowStatus.FinishedReader = (_, _) => { checks++; return true; };
+
+        var svc = Substitute.For<ISerializdService>();
+        svc.ResolveSeasonIdAsync(1396, 1).Returns(Task.FromResult<int?>(3572));
+        SerializdServiceFactory.OverrideForTesting = (_, _, _) => Task.FromResult(svc);
+
+        foreach (var n in new[] { 4, 5 })
+            await _handler.HandlePlaybackStoppedAsync(new PlaybackStopEventArgs
+            {
+                Item = MakeEpisode(1, n),
+                PlayedToCompletion = true,
+                Users = new List<User> { user },
+            });
+
+        Assert.Equal(1, checks);
+        await svc.Received(1).SetWatchedAsync(1396);
+        await svc.Received(1).RemoveCurrentlyWatchingAsync(1396);
     }
 
     [Fact]
