@@ -486,6 +486,49 @@ public class LetterboxdControllerTests
         Assert.Single(mine, a => a.IsPrimary);
     }
 
+    [Fact]
+    public void PutAccounts_UsernameLinkedToOtherUser_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(OtherUserId, "victim");
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new() { new AccountUpdateRequest { LetterboxdUsername = "VICTIM ", LetterboxdPassword = "guess", Enabled = true } }
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("already linked to another Jellyfin user", Prop<string>(result, "error"));
+        Assert.DoesNotContain(h.Config.Accounts, a => a.UserJellyfinId == UserId);
+    }
+
+    [Fact]
+    public void PutAccounts_SameUserResavesOwnUsername_Succeeds()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "mine");
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new() { new AccountUpdateRequest { LetterboxdUsername = "mine", LetterboxdPassword = "new", Enabled = true } }
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("new", h.Config.Accounts.Single(a => a.UserJellyfinId == UserId).LetterboxdPassword);
+    }
+
+    [Fact]
+    public void PutAccount_UsernameLinkedToOtherUser_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(OtherUserId, "victim");
+
+        var result = h.Controller.PutAccount(new AccountUpdateRequest { LetterboxdUsername = "Victim", LetterboxdPassword = "guess" });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.DoesNotContain(h.Config.Accounts, a => a.UserJellyfinId == UserId);
+    }
+
     // ----- StartSync -----
 
     [Fact]

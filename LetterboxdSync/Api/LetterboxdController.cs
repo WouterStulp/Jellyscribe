@@ -288,6 +288,16 @@ public class LetterboxdController : JellyfinUserApiController
             ? "Letterboxd no longer accepts an email address to sign in. Use your Letterboxd username, the name in letterboxd.com/<username>/."
             : null;
 
+    /// <summary>
+    /// Message when a Letterboxd username is already linked to another Jellyfin user, else null.
+    /// Letting a second user save it would let them sync, review and rate as that account.
+    /// </summary>
+    private static string? LinkedToOtherUserError(string userId, string? username) =>
+        !string.IsNullOrWhiteSpace(username) && Config.Accounts.Any(a => a.UserJellyfinId != userId
+            && string.Equals(a.LetterboxdUsername?.Trim(), username.Trim(), StringComparison.OrdinalIgnoreCase))
+            ? $"The Letterboxd account '{username.Trim()}' is already linked to another Jellyfin user."
+            : null;
+
     /// <summary>Letterboxd's own reason (an OAuth error_description) when present, else the sanitised message.</summary>
     internal static string DescribeLoginError(Exception ex)
     {
@@ -367,6 +377,9 @@ public class LetterboxdController : JellyfinUserApiController
 
         if (EmailAsUsernameError(request.LetterboxdUsername) is { } emailError)
             return BadRequest(new { error = emailError });
+
+        if (LinkedToOtherUserError(userId, request.LetterboxdUsername) is { } linkedError)
+            return BadRequest(new { error = linkedError });
 
         var account = Config.Accounts.FirstOrDefault(a => a.UserJellyfinId == userId);
         if (account == null)
@@ -485,6 +498,8 @@ public class LetterboxdController : JellyfinUserApiController
                 return BadRequest(new { error = $"Account #{i + 1} is missing a Letterboxd username" });
             if (EmailAsUsernameError(request.Accounts[i].LetterboxdUsername) is { } emailError)
                 return BadRequest(new { error = emailError });
+            if (LinkedToOtherUserError(userId, request.Accounts[i].LetterboxdUsername) is { } linkedError)
+                return BadRequest(new { error = linkedError });
         }
 
         // Preserve every account that doesn't belong to the calling user. The admin

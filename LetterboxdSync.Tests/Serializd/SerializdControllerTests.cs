@@ -450,6 +450,44 @@ public class SerializdControllerTests : IDisposable
         Assert.Equal("untouched@example.com", other.Email);
     }
 
+    [Fact]
+    public void PutAccounts_EmailLinkedToOtherUser_ReturnsBadRequest()
+    {
+        var (_, idHex) = AddUserWithAccount(email: "mine@example.com");
+        Plugin.Instance!.Configuration.SerializdAccounts.Add(new SerializdAccount
+        {
+            UserJellyfinId = "someone-else",
+            Email = "victim@example.com",
+            Password = "pw",
+            Enabled = true,
+        });
+        Authenticate(idHex);
+
+        var result = _controller.PutAccounts(new SerializdController.AccountsUpdateRequest
+        {
+            Accounts = new() { new SerializdController.AccountItem { Email = " Victim@Example.com", Password = "guess", Enabled = true } }
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("already linked to another Jellyfin user", Prop<string>(result, "error"));
+        Assert.Equal("mine@example.com", Plugin.Instance!.Configuration.SerializdAccounts.Single(a => a.UserJellyfinId == idHex).Email);
+    }
+
+    [Fact]
+    public void PutAccounts_SameUserResavesOwnEmail_Succeeds()
+    {
+        var (_, idHex) = AddUserWithAccount(email: "mine@example.com");
+        Authenticate(idHex);
+
+        var result = _controller.PutAccounts(new SerializdController.AccountsUpdateRequest
+        {
+            Accounts = new() { new SerializdController.AccountItem { Email = "mine@example.com", Password = "new", Enabled = true } }
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("new", Plugin.Instance!.Configuration.SerializdAccounts.Single(a => a.UserJellyfinId == idHex).Password);
+    }
+
     // ----- GetStats / GetHistory -----
 
     [Fact]

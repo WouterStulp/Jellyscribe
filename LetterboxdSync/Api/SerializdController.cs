@@ -135,6 +135,14 @@ public class SerializdController : JellyfinUserApiController
         }
 
         var config = Plugin.Instance!.Configuration;
+
+        // An email already linked to another Jellyfin user would let this user act as that
+        // Serializd account.
+        var taken = request.Accounts.Select(a => a.Email!.Trim()).FirstOrDefault(email => config.SerializdAccounts
+            .Any(a => a.UserJellyfinId != userId && string.Equals(a.Email?.Trim(), email, StringComparison.OrdinalIgnoreCase)));
+        if (taken != null)
+            return BadRequest(new { error = $"The Serializd account '{taken}' is already linked to another Jellyfin user." });
+
         var preserved = config.SerializdAccounts.Where(a => a.UserJellyfinId != userId).ToList();
         var previous = config.SerializdAccounts.Where(a => a.UserJellyfinId == userId).ToList();
         var mine = request.Accounts.Select(req => new Configuration.SerializdAccount
