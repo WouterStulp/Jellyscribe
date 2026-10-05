@@ -1,24 +1,21 @@
-# [Jellyscribe](https://jellyscribe.dev/)
+# Jellyscribe (WouterStulp fork)
 
-[![CI](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/ci.yml/badge.svg)](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/ci.yml)
-[![Release](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/release.yml/badge.svg)](https://github.com/builtbyproxy/Jellyscribe/actions/workflows/release.yml)
-[![codecov](https://codecov.io/gh/builtbyproxy/Jellyscribe/branch/main/graph/badge.svg)](https://codecov.io/gh/builtbyproxy/Jellyscribe)
-[![GitHub release](https://img.shields.io/github/v/release/builtbyproxy/Jellyscribe)](https://github.com/builtbyproxy/Jellyscribe/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/WouterStulp/Jellyscribe)](https://github.com/WouterStulp/Jellyscribe/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Downloads](https://img.shields.io/github/downloads/builtbyproxy/Jellyscribe/total)](https://github.com/builtbyproxy/Jellyscribe/releases)
-[![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/builtbyproxy/Jellyscribe)
 
-> **Formerly LetterboxdSync.** Renamed to Jellyscribe now that it syncs TV shows (via Serializd) alongside films (via Letterboxd), not just Letterboxd. Existing installs update in place automatically, no action needed.
-
-- **Website:** [jellyscribe.dev](https://jellyscribe.dev/)
-- **What's new:** [release notes for every version](https://jellyscribe.dev/releases/)
-- **Built with AI:** most of this plugin is AI-written, human-reviewed, [full transparency in AI.md](AI.md)
+> **This is a standalone fork** of [builtbyproxy/Jellyscribe](https://github.com/builtbyproxy/Jellyscribe), built and released from this repository. It tracks upstream and adds changes of its own (see [What this fork adds](#what-this-fork-adds)). Upstream's [website](https://jellyscribe.dev/) and [release notes](https://jellyscribe.dev/releases/) describe the upstream plugin, not this fork.
 
 Automatically sync your Jellyfin watch history to your Letterboxd diary (films) and Serializd diary (TV). Titles are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
 
 Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`) and Serializd's API.
 
 <img alt="Jellyscribe dashboard inside the Jellyfin admin UI, showing sync stats and recent activity" src="docs/images/dashboard.png" />
+
+## What this fork adds
+
+- **Serializd "Currently watching"**, a show is marked as currently watching on your Serializd profile when you start it in Jellyfin, and left alone once you've finished it
+- **Shows Serializd keeps as one season**, later seasons are logged as continued episodes of that single season instead of failing
+- **History survives a user rename**, sync history and duplicate checks are tied to the Jellyfin user id, so renaming a user no longer empties the dashboard
 
 ## Features
 
@@ -60,7 +57,6 @@ Full feature parity with the Letterboxd side: real-time sync, ratings, reviews, 
 ### Dashboard & diagnostics
 
 - **Dashboard**, sync stats, activity history, and one-click sync from the plugin page
-- **Send logs to developer**, one-click diagnostic bundle from the Logs tab, with a full preview of what's sent and a reference code to quote in a bug report
 - **Cloudflare resilient**, automatic retry with backoff on rate limits and transient Letterboxd errors, raw cookie fallback
 
 ## Install
@@ -69,15 +65,16 @@ Full feature parity with the Letterboxd side: real-time sync, ratings, reviews, 
 
 1. In Jellyfin, go to **Dashboard > Plugins > Repositories**
 2. Add the Jellyscribe repository:
-   - **Name:** `Jellyscribe`
-   - **URL:** `https://lbsync-telemetry.lachlanbyoung.workers.dev/manifest.json`
-3. Go to **Catalog** and install **Jellyscribe**
-4. Restart Jellyfin
-5. Hard-refresh the Jellyfin web UI (Ctrl/Cmd + Shift + R) so the new sidebar link loads
+   - **Name:** `Jellyscribe (WouterStulp fork)`
+   - **URL:** `https://raw.githubusercontent.com/WouterStulp/Jellyscribe/main/fork/manifest.json`
+3. Remove the upstream Jellyscribe repository if you have it (any `lachlanbyoung.workers.dev` or `builtbyproxy` entry). The fork uses the same plugin id, so with both listed Jellyfin picks whichever has the higher version
+4. Go to **Catalog** and install **Jellyscribe**
+5. Restart Jellyfin
+6. Hard-refresh the Jellyfin web UI (Ctrl/Cmd + Shift + R) so the new sidebar link loads
 
 ### Manual install
 
-1. Download the latest Jellyscribe ZIP from [Releases](https://github.com/builtbyproxy/Jellyscribe/releases)
+1. Download the latest Jellyscribe ZIP from [Releases](https://github.com/WouterStulp/Jellyscribe/releases)
 2. Extract `Jellyscribe.dll` and `HtmlAgilityPack.dll` to your Jellyfin plugins directory
 3. Restart Jellyfin
 
@@ -149,48 +146,9 @@ When a correctly-copied cookie still gets blocked, it's usually one of these:
 
 If you've ruled all three out and a single film keeps getting stuck on the TMDb lookup, open an issue. A workaround that skips the Cloudflare-protected lookup for that one film (pointing a TMDb ID directly at a Letterboxd slug) is being considered.
 
-## Telemetry
+## Privacy
 
-The plugin can send **anonymous, opt-in** usage telemetry. It is **off by default**, nothing is ever sent unless you enable it (one-time dashboard banner or the Settings checkbox).
-
-When enabled, one small ping is sent per week, plus one extra ping (capped at one per day) when sync errors start occurring so fleet-wide breakage gets caught early. The full payload is exactly this, you can see your own at any time via **Settings → Anonymous Telemetry → Preview exact JSON**:
-
-```json
-{
-  "schema_version": 1,
-  "instance_id": "8a6f4f6e-1f2b-4c43-9a57-2f0e6f3b9d1c",
-  "ping_type": "weekly",
-  "plugin_version": "2.1.0.0",
-  "jellyfin_version": "10.11.11",
-  "features": { "watchlist_sync": true, "diary_import": false, "tv_watchlist_sync": false, "tv_diary_import": false,
-                 "...": "booleans of which Letterboxd and Serializd settings are enabled" },
-  "buckets": { "accounts": "1", "library": "2k-10k", "syncs_per_week": "1-10", "syncs_ever": "11-100",
-               "tv_syncs_per_week": "0", "tv_syncs_ever": "0" },
-  "errors": { "cloudflare_403": 0, "auth_failure": 0, "tmdb_lookup": 0, "jellyseerr_error": 0, "rate_limit": 0, "other": 0,
-              "state": { "cloudflare_403": false, "...": "which error types are currently occurring" } }
-}
-```
-
-The precise promise, worded carefully:
-
-- **No IPs, usernames, film titles, library content, or exact counts ever enter the dataset.** Counts are reported in buckets only. (Transport logs at the hosting platform retain caller IPs for the platform's own short retention window, like any HTTPS service; they are never stored in the telemetry dataset.)
-- The instance ID is **random**, generated when you opt in, never derived from your hardware, network, or Jellyfin install. **Regenerate it any time** in Settings: future pings get a fresh identity. Old rows remain (unlinked going forward); at small fleet sizes configuration similarity could in principle still allow correlation, so the honest claim is "unlinked", not "erased".
-- The "Preview exact JSON" modal doubles as a **diagnostic bundle** for bug reports. It contains your instance ID, pasting it into a public issue links that ID to your past pings, which is why the modal offers **Copy + regenerate ID**.
-- Disabling telemetry stops all pings immediately.
-
-What it's for: deciding what gets built next based on what people actually use, and an automated canary that compares error rates across releases and files regression issues before bug reports arrive.
-
-### Install counting (separate from the opt-in telemetry)
-
-The recommended plugin repository URL and the release downloads are served through an edge-cached mirror of the GitHub manifest. The mirror counts each request as an anonymous, weekly-rotating hash of the caller's IP so the project can estimate how many servers run the plugin. This is a plain traffic count, not the telemetry above: no instance ID, no settings, no versions beyond the release being downloaded, and the raw IP is never stored, the hash is salted and cannot be linked across weeks by design.
-
-Since v1.19.0 the plugin also adds the mirror as a second catalog repository entry (named "... (mirror)") alongside your existing GitHub entry, once. Your GitHub entry is never removed, so updates keep working even if the mirror is unreachable. If you prefer not to be counted, delete the mirror entry, the plugin will not re-add it, and both entries serve the identical manifest.
-
-### Send logs to the developer
-
-When something goes wrong, the **Logs** tab has a **Send logs to developer** button. It packages the recent Jellyscribe log lines shown on that tab (passwords, cookies, and auth tokens are never logged) plus an anonymous telemetry snapshot, uploads them privately, and gives you a short **reference code** (e.g. `LBX-7Q2F9K`) to quote if you open a bug report.
-
-Unlike the anonymous telemetry above, **logs are not anonymous**, they can contain your Letterboxd username or film titles, and the bundle is linked to your telemetry instance ID. So it is strictly opt-in per use: a confirmation step spells this out, lets you add a note describing the problem, and offers a preview of exactly what is sent before anything leaves your server. Works whether or not telemetry is enabled. Uploaded bundles are stored privately and auto-deleted after 90 days.
+This fork sends nothing anywhere except to the services you link: Letterboxd, Serializd and your own Seerr. The upstream plugin's usage telemetry, "Send logs to developer" upload, and install-counting repository mirror are removed.
 
 ## Requirements
 
@@ -204,19 +162,24 @@ Unlike the anonymous telemetry above, **logs are not anonymous**, they can conta
 ## Building from source
 
 ```bash
-git clone https://github.com/builtbyproxy/Jellyscribe.git
+git clone https://github.com/WouterStulp/Jellyscribe.git
 cd Jellyscribe
 dotnet build -c Release
 ```
 
-Output `Jellyscribe.dll` is in `LetterboxdSync/bin/Release/net9.0/`.
+Output `Jellyscribe.dll` is in `LetterboxdSync/bin/Release/net9.0/`. Without a local .NET 9 SDK, run the same in a container:
+
+```bash
+docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:9.0 dotnet build -c Release
+```
+
+## Releasing
+
+Versions are the upstream version plus a fourth number (`2.10.0` → `2.10.0.1`). A PR that ships to users bumps `AssemblyVersion`/`FileVersion` in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj` and fills in its `## Release notes` section. When it's merged, `release.yml` runs `fork/release.sh`, which tests, publishes the GitHub release and adds the version to `fork/manifest.json`. `fork/release.sh "<changelog>"` also works by hand.
 
 ## Contributing
 
-PRs welcome. A few conventions:
-
-- **PR body shape** lives in [`.github/pull_request_template.md`](.github/pull_request_template.md). Symptom first, plain English, six fixed sections (What's broken, Why it happens, What this PR does, How to test, Follow-ups).
-- **Non-trivial changes** are planned through [`openspec/`](openspec/) before implementation: proposal, design, specs, then tasks. See [`openspec/changes/`](openspec/changes/) for active proposals and the [`archive/`](openspec/changes/archive/) folder for past ones.
+Issues and PRs go to [this repository](https://github.com/WouterStulp/Jellyscribe), not upstream. Changes land on `main` through a PR and ship with the next fork release.
 
 ## License
 
