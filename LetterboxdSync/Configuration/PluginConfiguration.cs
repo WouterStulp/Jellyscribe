@@ -33,7 +33,20 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Seerr API key (Settings → General → API Key in Seerr).
     /// </summary>
     [XmlIgnore]
+    [JsonIgnore]
     public string? JellyseerrApiKey { get; set; }
+
+    /// <summary>Write-only JSON form of <see cref="JellyseerrApiKey"/>. See <see cref="Account.LetterboxdPasswordInput"/>.</summary>
+    [XmlIgnore]
+    [JsonPropertyName("JellyseerrApiKey")]
+    public string? JellyseerrApiKeyInput
+    {
+        internal get => JellyseerrApiKey;
+        set => JellyseerrApiKey = value;
+    }
+
+    [XmlIgnore]
+    public bool HasJellyseerrApiKey => !string.IsNullOrEmpty(JellyseerrApiKey);
 
     /// <summary>Encrypted on-disk form of <see cref="JellyseerrApiKey"/>. See <see cref="Configuration.Account.LetterboxdPasswordProtected"/> for why this is JsonIgnore'd.</summary>
     [XmlElement("JellyseerrApiKey")]
@@ -69,7 +82,24 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>Optional ntfy access token, sent as a bearer token.</summary>
     [XmlIgnore]
+    [JsonIgnore]
     public string? NtfyToken { get; set; }
+
+    /// <summary>Write-only JSON form of <see cref="NtfyToken"/>. See <see cref="Account.LetterboxdPasswordInput"/>.</summary>
+    [XmlIgnore]
+    [JsonPropertyName("NtfyToken")]
+    public string? NtfyTokenInput
+    {
+        internal get => NtfyToken;
+        set => NtfyToken = value;
+    }
+
+    [XmlIgnore]
+    public bool HasNtfyToken => !string.IsNullOrEmpty(NtfyToken);
+
+    /// <summary>Write-only: true on a config POST drops the stored token, which an empty value would keep.</summary>
+    [XmlIgnore]
+    public bool ClearNtfyToken { internal get; set; }
 
     /// <summary>Encrypted on-disk form of <see cref="NtfyToken"/>, same scheme as <see cref="JellyseerrApiKeyProtected"/>.</summary>
     [XmlElement("NtfyToken")]
