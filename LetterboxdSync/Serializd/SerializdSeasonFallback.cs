@@ -6,7 +6,18 @@ using MediaBrowser.Controller.Entities.TV;
 
 namespace LetterboxdSync.Serializd;
 
-internal sealed record SerializdSeasonTarget(int SeasonId, int EpisodeOffset);
+internal sealed record SerializdSeasonTarget(int SeasonId, int EpisodeOffset, int? EpisodeCount = null)
+{
+    /// <summary>
+    /// The episode number to log on Serializd, or null when it would land past the end of the
+    /// season Serializd has, which means the offset no longer matches Serializd's numbering.
+    /// </summary>
+    public int? EpisodeFor(int episode)
+    {
+        var number = episode + EpisodeOffset;
+        return number > EpisodeCount ? null : number;
+    }
+}
 
 internal static class SerializdSeasonFallback
 {
@@ -28,8 +39,12 @@ internal static class SerializdSeasonFallback
         if (firstSeasonId == null)
             return null;
 
+        var firstSeasonCount = await service.GetSeasonEpisodeCountAsync(showTmdbId, 1).ConfigureAwait(false);
         var offset = EpisodeOffset(seasonNumber, seasonLengths());
-        return offset == null ? null : new SerializdSeasonTarget(firstSeasonId.Value, offset.Value);
+        if (firstSeasonCount == null || offset == null || offset >= firstSeasonCount)
+            return null;
+
+        return new SerializdSeasonTarget(firstSeasonId.Value, offset.Value, firstSeasonCount);
     }
 
     internal static int? EpisodeOffset(int seasonNumber, IReadOnlyDictionary<int, int> seasonLengths)

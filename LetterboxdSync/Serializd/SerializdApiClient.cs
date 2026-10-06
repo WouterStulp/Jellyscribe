@@ -45,6 +45,9 @@ public class SerializdApiClient : ISerializdService
     // (a newly-aired season) before giving up (see ResolveSeasonIdAsync).
     private static readonly ConcurrentDictionary<int, IReadOnlyDictionary<int, int>> SeasonCache = new();
 
+    // showTmdbId -> (seasonNumber -> episode count), filled by the same fetch as SeasonCache.
+    private static readonly ConcurrentDictionary<int, IReadOnlyDictionary<int, int>> EpisodeCountCache = new();
+
     // Serializd 500s when hit with a concurrent burst (seen during the initial diary backfill:
     // 6-7 parallel /show/reviews/add in the same second all returned 500). Two guards keep the
     // backfill polite and self-healing:
@@ -70,6 +73,7 @@ public class SerializdApiClient : ISerializdService
     {
         TokenCache.Clear();
         SeasonCache.Clear();
+        EpisodeCountCache.Clear();
     }
 
     /// <summary>
@@ -145,6 +149,17 @@ public class SerializdApiClient : ISerializdService
         return fresh.TryGetValue(seasonNumber, out var id) ? id : null;
     }
 
+    public async Task<int?> GetSeasonEpisodeCountAsync(int showTmdbId, int seasonNumber)
+    {
+        if (!EpisodeCountCache.TryGetValue(showTmdbId, out var counts))
+        {
+            SeasonCache[showTmdbId] = await FetchSeasonMapAsync(showTmdbId).ConfigureAwait(false);
+            counts = EpisodeCountCache.GetValueOrDefault(showTmdbId) ?? new Dictionary<int, int>();
+        }
+
+        return counts.TryGetValue(seasonNumber, out var count) ? count : null;
+    }
+
     private async Task<IReadOnlyDictionary<int, int>> FetchSeasonMapAsync(int showTmdbId)
     {
         using var resp = await SendAsync(HttpMethod.Get, $"/show/{showTmdbId}").ConfigureAwait(false);
@@ -158,6 +173,7 @@ public class SerializdApiClient : ISerializdService
         using var doc = JsonDocument.Parse(json);
 
         var map = new Dictionary<int, int>();
+        var counts = new Dictionary<int, int>();
         if (doc.RootElement.TryGetProperty("seasons", out var seasons) && seasons.ValueKind == JsonValueKind.Array)
         {
             foreach (var s in seasons.EnumerateArray())
@@ -165,10 +181,13 @@ public class SerializdApiClient : ISerializdService
                 if (TryGetInt(s, "seasonNumber", out var num) && TryGetInt(s, "id", out var id))
                 {
                     map[num] = id;
+                    if (TryGetInt(s, "episodeCount", out var count) && count > 0)
+                        counts[num] = count;
                 }
             }
         }
 
+        EpisodeCountCache[showTmdbId] = counts;
         return map;
     }
 

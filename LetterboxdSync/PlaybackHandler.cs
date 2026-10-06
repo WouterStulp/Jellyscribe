@@ -292,8 +292,16 @@ public class PlaybackHandler : IHostedService, IDisposable
                         continue;
                     }
 
+                    if (epRef.EpisodeNumbers.Any(n => target.EpisodeFor(n) == null))
+                    {
+                        _logger.LogWarning(
+                            "Serializd's season 1 of {Series} (TMDb {TmdbId}) is too short for S{Season}E{Episode}, skipping",
+                            episode.SeriesName, epRef.ShowTmdbId, epRef.SeasonNumber, epRef.EpisodeNumbers[^1]);
+                        continue;
+                    }
+
                     var seasonId = target.SeasonId;
-                    var serializdEpisodes = epRef.EpisodeNumbers.Select(n => n + target.EpisodeOffset).ToList();
+                    var serializdEpisodes = epRef.EpisodeNumbers.Select(n => target.EpisodeFor(n)!.Value).ToList();
                     if (target.EpisodeOffset > 0)
                         _logger.LogInformation(
                             "Serializd lists {Series} as a single season; logging S{Season}E{Episode} as S1E{Absolute}",
@@ -316,7 +324,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                         var isRewatch = SerializdSyncHistory.Has(
                             userId, account.Email, epRef.ShowTmdbId, epRef.SeasonNumber, n, SerializdSyncHistory.KindLog);
                         await service.CreateEpisodeLogAsync(
-                            epRef.ShowTmdbId, seasonId, n + target.EpisodeOffset, DateTime.UtcNow, rating, isRewatch)
+                            epRef.ShowTmdbId, seasonId, target.EpisodeFor(n)!.Value, DateTime.UtcNow, rating, isRewatch)
                             .ConfigureAwait(false);
                         SerializdSyncHistory.Record(
                             userId, account.Email, epRef.ShowTmdbId, epRef.SeasonNumber, n, SerializdSyncHistory.KindLog);

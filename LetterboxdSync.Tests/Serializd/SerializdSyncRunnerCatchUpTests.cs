@@ -152,6 +152,7 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
         SerializdSeasonFallback.SeasonLengthsReader = _ => new Dictionary<int, int> { [1] = 24, [2] = 24 };
         var service = FakeService(out var logged);
         service.ResolveSeasonIdAsync(ShowTmdbId, 2).Returns(Task.FromResult<int?>(null));
+        service.GetSeasonEpisodeCountAsync(ShowTmdbId, 1).Returns(Task.FromResult<int?>(48));
 
         await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
 
@@ -159,6 +160,28 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
             Arg.Is<IReadOnlyList<int>>(l => l.Count == 1 && l[0] == 27));
         Assert.Equal((ShowTmdbId, 501, 27), Assert.Single(logged));
         Assert.True(SerializdSyncHistory.Has(idHex, "user@example.com", ShowTmdbId, 2, 3, SerializdSyncHistory.KindLog));
+    }
+
+    [Fact]
+    public async Task Run_EpisodePastTheEndOfSerializdsSingleSeason_NotLogged()
+    {
+        var (user, idHex) = AddUserWithAccount();
+        var fits = MakeEpisode(2, 4);
+        var tooFar = MakeEpisode(2, 5);
+        LibraryHas(fits, tooFar);
+        _userDataManager.GetUserData(user, Arg.Any<Episode>()).Returns(MakeUserData(DateTime.UtcNow.AddHours(-1)));
+        SerializdSeasonFallback.SeasonLengthsReader = _ => new Dictionary<int, int> { [1] = 20, [2] = 24 };
+        var service = FakeService(out var logged);
+        service.ResolveSeasonIdAsync(ShowTmdbId, 2).Returns(Task.FromResult<int?>(null));
+        service.GetSeasonEpisodeCountAsync(ShowTmdbId, 1).Returns(Task.FromResult<int?>(24));
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        await service.Received(1).LogEpisodesAsync(ShowTmdbId, 501,
+            Arg.Is<IReadOnlyList<int>>(l => l.Count == 1 && l[0] == 24));
+        Assert.Equal((ShowTmdbId, 501, 24), Assert.Single(logged));
+        Assert.False(SerializdSyncHistory.Has(idHex, "user@example.com", ShowTmdbId, 2, 5));
+        Assert.False(SerializdSyncHistory.Has(idHex, "user@example.com", ShowTmdbId, 2, 5, SerializdSyncHistory.KindLog));
     }
 
     [Fact]

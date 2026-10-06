@@ -305,9 +305,16 @@ public class SerializdSyncRunner
                     continue;
                 }
 
-                await service.LogEpisodesAsync(show, target.SeasonId, epNums.Select(n => n + target.EpisodeOffset).ToList())
+                var fitting = epNums.Where(n => target.EpisodeFor(n) != null).ToList();
+                if (fitting.Count < epNums.Count)
+                    _logger.LogWarning(
+                        "Serializd's season 1 of TMDb show {Show} is too short for some of season {Season}, skipping those episodes",
+                        show, season);
+                if (fitting.Count == 0) continue;
+
+                await service.LogEpisodesAsync(show, target.SeasonId, fitting.Select(n => target.EpisodeFor(n)!.Value).ToList())
                     .ConfigureAwait(false);
-                foreach (var n in epNums)
+                foreach (var n in fitting)
                     SerializdSyncHistory.Record(userId, account.Email, show, season, n);
             }
             catch (Exception ex)
@@ -328,9 +335,10 @@ public class SerializdSyncRunner
             try
             {
                 var target = await TargetFor(r.Show, r.Season).ConfigureAwait(false);
-                if (target == null) continue;
+                var serializdEpisode = target?.EpisodeFor(r.Episode);
+                if (target == null || serializdEpisode == null) continue;
 
-                await service.CreateEpisodeLogAsync(r.Show, target.SeasonId, r.Episode + target.EpisodeOffset, r.WatchedAtUtc, r.Rating, isRewatch: false)
+                await service.CreateEpisodeLogAsync(r.Show, target.SeasonId, serializdEpisode.Value, r.WatchedAtUtc, r.Rating, isRewatch: false)
                     .ConfigureAwait(false);
                 SerializdSyncHistory.Record(userId, account.Email, r.Show, r.Season, r.Episode, SerializdSyncHistory.KindLog);
                 logged++;

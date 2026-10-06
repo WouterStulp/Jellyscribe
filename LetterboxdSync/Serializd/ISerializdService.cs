@@ -25,6 +25,12 @@ public interface ISerializdService : IDisposable
     /// </summary>
     Task<int?> ResolveSeasonIdAsync(int showTmdbId, int seasonNumber);
 
+    /// <summary>
+    /// The number of episodes Serializd lists for a season, or null when the show has no such
+    /// season or Serializd gives no count.
+    /// </summary>
+    Task<int?> GetSeasonEpisodeCountAsync(int showTmdbId, int seasonNumber);
+
     /// <summary>Marks the given episode numbers watched on Serializd.</summary>
     Task LogEpisodesAsync(int showTmdbId, int seasonId, IReadOnlyList<int> episodeNumbers);
 
