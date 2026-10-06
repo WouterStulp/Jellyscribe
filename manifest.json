@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.10.1.0",
+        "changelog": "If you renamed a Jellyfin user, their Jellyscribe dashboard suddenly showed zero films, zero episodes and no recent activity, as if nothing had ever been synced. Nothing was lost: every entry was still there, but each one was filed under the name the user had when it was written, and the dashboard only looked for the new name. The same mix-up quietly weakened the duplicate checks, so a film synced before the rename could be logged to Letterboxd a second time afterwards. History is now tied to the Jellyfin user itself rather than to their name, and existing entries are linked up automatically the first time this version starts. The one case this cannot repair on its own is a user who was already renamed before updating: their older entries stay filed under the old name.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.10.1/jellyfin-plugin-letterboxd-v2.10.1.zip",
+        "checksum": "118b5d9d390c16c30f4c5572f1fe1e2e",
+        "timestamp": "2026-10-06T10:00:59Z"
+      },
+      {
         "version": "2.10.0.0",
         "changelog": "Clicking Jellyscribe used to reload the whole Jellyfin web app and drop you onto a plugin settings page. It now opens as a proper page inside Jellyfin, the way Jellyfin Enhanced's Bookmarks does: no reload, Jellyfin's header and menu stay put, and the back button takes you straight back to where you were. You can also bookmark it, since it has its own address ending in #/jellyscribe. On Jellyfin 12, where the sidebar was replaced by a menu under your profile picture, Jellyscribe now appears in that menu, so it is reachable there for the first time. Everything on the page works as before, and the old settings-page address still works.",
         "targetAbi": "10.11.9.0",
