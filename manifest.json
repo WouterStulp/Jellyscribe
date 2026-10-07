@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.10.3.0",
+        "changelog": "This release fixes two security problems that affect any server where more than one person uses Jellyscribe, so please update. First, the admin dashboard showed account names, film titles and error messages as raw page content, so a user could save a specially crafted account name that ran code in an admin's browser the next time they opened the dashboard. Every value is now shown as plain text, and an old, unused stats page with the same problem has been removed. Second, Jellyscribe remembered Letterboxd and Serializd logins by account name alone, so a user who entered someone else's Letterboxd username or Serializd email with any password could end up syncing, reviewing and rating as that person. A remembered login is now only reused when the password matches too. Households that deliberately share one Letterboxd or Serializd account across several Jellyfin users are unaffected. Both problems were found and fixed by Wouter Stulp. Thank you, Wouter.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.10.3/jellyfin-plugin-letterboxd-v2.10.3.zip",
+        "checksum": "9feea8358e97131156f4794fc373e555",
+        "timestamp": "2026-10-07T03:31:50Z"
+      },
+      {
         "version": "2.10.2.0",
         "changelog": "Many anime are split into several seasons in Jellyfin but listed on Serializd as one long season. The Apothecary Diaries is a good example: Jellyfin shows a season 1 and a season 2, while Serializd, which follows TMDb, has one long season covering both. Watching season 2 in Jellyfin produced nothing on Serializd, because Jellyscribe asked for a season 2 that Serializd does not have and skipped the episode. Jellyscribe now recognises that shape and logs the episode to season 1 at its running number, so season 2 episode 1 lands on Serializd as episode 25. It only does this for shows Serializd keeps as a single season, and only when it knows exactly how many episodes the earlier seasons have, so a show Serializd simply has not added a new season for yet is still skipped rather than logged to the wrong episode.",
         "targetAbi": "10.11.9.0",
