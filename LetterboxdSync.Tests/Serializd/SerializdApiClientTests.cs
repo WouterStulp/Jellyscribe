@@ -16,7 +16,7 @@ public class SerializdApiClientTests
         NullLoggerFactory.Instance.CreateLogger("test");
 
     private const string ShowJson =
-        "{\"seasons\":[{\"id\":3577,\"seasonNumber\":0},{\"id\":3572,\"seasonNumber\":1},{\"id\":3573,\"seasonNumber\":2}]}";
+        "{\"seasons\":[{\"id\":3577,\"seasonNumber\":0},{\"id\":3572,\"seasonNumber\":1,\"episodeCount\":7},{\"id\":3573,\"seasonNumber\":2}]}";
 
     private static HttpResponseMessage Json(HttpStatusCode code, string body)
         => new(code) { Content = new StringContent(body) };
@@ -78,6 +78,32 @@ public class SerializdApiClientTests
         Assert.Equal(3572, await client.ResolveSeasonIdAsync(1396, 1));
         Assert.Equal(3577, await client.ResolveSeasonIdAsync(1396, 0)); // specials
         Assert.Null(await client.ResolveSeasonIdAsync(1396, 99));       // no such season
+    }
+
+    [Fact]
+    public async Task GetSeasonEpisodeCount_ReadsTheShowOnce_NullWithoutACount()
+    {
+        var showFetches = 0;
+        var handler = new ApiMockHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
+            if (req.RequestUri.AbsolutePath.Contains("/show/1396"))
+            {
+                showFetches++;
+                return Json(HttpStatusCode.OK, ShowJson);
+            }
+            return Json(HttpStatusCode.NotFound, "{}");
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        Assert.Equal(3572, await client.ResolveSeasonIdAsync(1396, 1));
+        Assert.Equal(7, await client.GetSeasonEpisodeCountAsync(1396, 1));
+        Assert.Null(await client.GetSeasonEpisodeCountAsync(1396, 2));  // no episodeCount
+        Assert.Null(await client.GetSeasonEpisodeCountAsync(1396, 99)); // no such season
+        Assert.Equal(1, showFetches);
     }
 
     [Fact]
