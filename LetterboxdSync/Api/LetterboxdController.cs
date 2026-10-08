@@ -231,6 +231,9 @@ public class LetterboxdController : JellyfinUserApiController
         });
     }
 
+    /// <summary>The most rows one <c>/History</c> page returns.</summary>
+    internal const int MaxHistoryPage = 250;
+
     /// <summary>
     /// Paginated sync history. Returns the slice plus the total so the dashboard can
     /// render a paginator. Without an offset the response is backwards-compatible with
@@ -246,7 +249,8 @@ public class LetterboxdController : JellyfinUserApiController
         if (string.IsNullOrEmpty(jellyfinUsername))
             return BadRequest(new { error = "Could not determine user" });
 
-        var capped = Math.Min(Math.Max(count, 1), 200);
+        // Both dashboards ask for 250 rows a page; a lower cap here silently shortened their pages.
+        var capped = Math.Clamp(count, 1, MaxHistoryPage);
         var (events, total) = SyncHistory.GetPage(Math.Max(offset, 0), capped, jellyfinUsername);
         return Ok(new { events, total, offset = Math.Max(offset, 0), count = capped });
     }
@@ -1007,22 +1011,9 @@ public class LetterboxdController : JellyfinUserApiController
               && ep.ParentIndexNumber == seasonNumber && ep.IndexNumber == episodeNumber);
     }
 
-    /// <summary>
-    /// Library items of one kind carrying the given TMDb id, filtered in the database
-    /// instead of loading the whole library. The id is re-checked in memory, so a query
-    /// that ever came back looser could not resolve (and write a rating to) the wrong item.
-    /// </summary>
+    /// <inheritdoc cref="TmdbLibraryLookup.FindByTmdbId"/>
     private IEnumerable<BaseItem> FindByTmdbId(User user, BaseItemKind kind, int tmdbId)
-    {
-        var id = tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        return _libraryManager.GetItemList(new InternalItemsQuery(user)
-        {
-            IncludeItemTypes = new[] { kind },
-            IsVirtualItem = false,
-            Recursive = true,
-            HasAnyProviderId = new Dictionary<string, string> { [MediaBrowser.Model.Entities.MetadataProvider.Tmdb.ToString()] = id }
-        }).Where(item => item.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == id);
-    }
+        => TmdbLibraryLookup.FindByTmdbId(_libraryManager, user, kind, tmdbId);
 
     /// <summary>
     /// Mirror the dashboard review's star rating into Jellyfin's UserItemData.Rating

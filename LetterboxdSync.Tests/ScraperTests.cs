@@ -17,7 +17,7 @@ public class ScraperTests
     private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
 
     // Lookups are cached process-wide, and two tests here resolve the same id to different films.
-    public ScraperTests() => LetterboxdScraper.ResetFilmCacheForTesting(693134, 99999, 12345);
+    public ScraperTests() => LetterboxdScraper.ResetFilmCacheForTesting(693134, 99999, 12345, 198102);
 
     [Fact]
     public async Task LookupFilmByTmdbId_ValidFilm_ReturnsFilmResult()
@@ -59,6 +59,121 @@ public class ScraperTests
         Assert.Equal("dune-part-two", result.Slug);
         Assert.Equal("945898", result.FilmId);
         Assert.Equal("PROD-dune", result.ProductionId);
+    }
+
+    // Shapes copied from live letterboxd.com pages on 2026-10-08. A film (The Godfather) carries its
+    // TMDb movie id on the body and a TMDb button to /movie/. A TV entry Letterboxd lists as a film
+    // (Chernobyl) still says data-tmdb-type="movie", has an empty data-tmdb-id, and only its TMDb
+    // button links to /tv/.
+    private const string MoviePage =
+        "<html><body class=\"film backdropped\" data-tmdb-id=\"238\" data-tmdb-type=\"movie\">" +
+        "<a href=\"https://www.themoviedb.org/movie/238/\" class=\"micro-button track-event\" data-track-action=\"TMDB\" target=\"_blank\">TMDB</a></body></html>";
+    private const string TvPage =
+        "<html><body class=\"film backdropped\" data-tmdb-id=\"\" data-tmdb-type=\"movie\">" +
+        "<a href=\"https://www.themoviedb.org/tv/87108/\" class=\"micro-button track-event\" data-track-action=\"TMDB\" target=\"_blank\">TMDB</a></body></html>";
+
+    [Fact]
+    public void ReadTmdbEntry_MoviePage_ReturnsTheMovieId()
+        => Assert.Equal((238, false), LetterboxdScraper.ReadTmdbEntry(MoviePage));
+
+    [Fact]
+    public void ReadTmdbEntry_TvPage_IsNotAMovie()
+        => Assert.Equal((null, true), LetterboxdScraper.ReadTmdbEntry(TvPage));
+
+    [Fact]
+    public void ReadTmdbEntry_TvButtonWinsOverAMovieTypeAndAnId()
+        => Assert.Equal((null, true), LetterboxdScraper.ReadTmdbEntry(
+            "<html><body data-tmdb-id=\"198102\" data-tmdb-type=\"movie\"><a href=\"https://www.themoviedb.org/tv/198102/\" data-track-action=\"TMDB\">TMDB</a></body></html>"));
+
+    [Fact]
+    public void ReadTmdbEntry_WithoutTheTypeAttribute_FallsBackToTheTmdbLink()
+    {
+        Assert.Equal((null, true), LetterboxdScraper.ReadTmdbEntry(
+            "<html><body data-tmdb-id=\"198102\"><a href=\"https://www.themoviedb.org/tv/198102/\" data-track-action=\"TMDB\">TMDB</a></body></html>"));
+        Assert.Equal((198102, false), LetterboxdScraper.ReadTmdbEntry(
+            "<html><body data-tmdb-id=\"198102\"><a href=\"https://www.themoviedb.org/movie/198102/\" data-track-action=\"TMDB\">TMDB</a></body></html>"));
+    }
+
+    [Fact]
+    public void ReadTmdbEntry_ATvLinkInAReview_DoesNotMakeTheFilmTv()
+        => Assert.Equal((198102, false), LetterboxdScraper.ReadTmdbEntry(
+            "<html><body data-tmdb-id=\"198102\">" +
+            "<div class=\"review\"><a href=\"https://www.themoviedb.org/tv/1399/\">a show I liked</a></div>" +
+            "<a href=\"https://www.themoviedb.org/movie/198102/\" data-track-action=\"TMDB\">TMDB</a></body></html>"));
+
+    [Theory]
+    [InlineData("film")]
+    [InlineData("Movie ")]
+    public void ReadTmdbEntry_AnUnfamiliarType_StillCountsAsAFilm(string type)
+        => Assert.Equal((198102, false), LetterboxdScraper.ReadTmdbEntry($"<html><body data-tmdb-id=\"198102\" data-tmdb-type=\"{type}\"></body></html>"));
+
+    [Fact]
+    public void ReadTmdbEntry_OlderMarkupWithNeither_StillCountsAsAFilm()
+        => Assert.Equal((550, false), LetterboxdScraper.ReadTmdbEntry("<html><body data-tmdb-id=\"550\"></body></html>"));
+
+    [Theory]
+    [InlineData("<html><body></body></html>")]
+    [InlineData("<html><body data-tmdb-id=\"\"></body></html>")]
+    [InlineData("<html><body data-tmdb-id=\"abc\"></body></html>")]
+    public void ReadTmdbEntry_NoUsableId_ReturnsNull(string html)
+        => Assert.Equal((null, false), LetterboxdScraper.ReadTmdbEntry(html));
+
+    [Fact]
+    public async Task LookupFilmByTmdbId_ResolvingToATvEntry_IsNotFound()
+    {
+        var filmPageRead = false;
+        var handler = new ScraperMockHandler((request, http) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+            if (path.StartsWith("/tmdb/198102"))
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "<html><head><link rel=\"canonical\" href=\"https://letterboxd.com/film/hijack-2023/\" /></head></html>")
+                };
+            if (path == "/film/hijack-2023/")
+            {
+                filmPageRead = true;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(TvPage.Replace("<a ", "<div data-film-slug=\"hijack-2023\" data-film-id=\"1\"></div><a "))
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var (http, scraper) = handler.CreateClients(TestLogger);
+        using var _ = http;
+
+        await Assert.ThrowsAsync<FilmNotFoundException>(() => scraper.LookupFilmByTmdbIdAsync(198102));
+        Assert.True(filmPageRead);
+    }
+
+    [Fact]
+    public async Task CloudflareBackoff_StopsWhenTheSyncIsCancelled()
+    {
+        var requests = 0;
+        using var cts = new CancellationTokenSource();
+        var handler = new ScraperMockHandler((_, _) =>
+        {
+            requests++;
+            // The sync is stopped during the backoff that follows this 403 (cancelling here would
+            // land on the send, which also takes the token).
+            cts.CancelAfter(TimeSpan.FromMilliseconds(300));
+            return new HttpResponseMessage(HttpStatusCode.Forbidden);
+        });
+
+        var (http, _) = handler.CreateClients(TestLogger);
+        using var __ = http;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        // A 403 backs off 15 s or more before the next attempt; an uncancellable backoff would
+        // sit that out before the next send noticed the cancellation.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => http.GetWithCloudflareRetryAsync("/tmdb/1", cancellationToken: cts.Token));
+
+        Assert.Equal(1, requests);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"waited {clock.Elapsed}");
     }
 
     [Fact]
