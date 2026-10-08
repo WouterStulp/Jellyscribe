@@ -118,6 +118,11 @@
                 #letterboxdUserPage .ws-src { color: var(--ws-faint); font-size: 12px; }
                 #letterboxdUserPage .ws-review-btn { border: 1px solid var(--ws-border); background: var(--ws-surface-2); color: var(--ws-muted); font-family: inherit; font-size: 11.5px; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
                 #letterboxdUserPage .ws-review-btn:hover { color: var(--ws-text); }
+                #letterboxdUserPage .ws-grp-btn { all: unset; display: flex; align-items: center; gap: 11px; cursor: pointer; }
+                #letterboxdUserPage .ws-grp-btn:focus-visible { outline: 2px solid var(--ws-primary); outline-offset: 3px; border-radius: 6px; }
+                #letterboxdUserPage .ws-grp-caret { display: inline-block; color: var(--ws-faint); transition: transform .13s; }
+                #letterboxdUserPage .ws-grp-btn[aria-expanded="true"] .ws-grp-caret { transform: rotate(90deg); }
+                #letterboxdUserPage .ws-table tr.ws-grp-item td:first-child { padding-left: 32px; }
                 #letterboxdUserPage .ws-cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px,1fr)); gap: 12px; }
                 #letterboxdUserPage .ws-acct { background: var(--ws-surface); border: 1px solid var(--ws-border); border-radius: var(--ws-r); padding: 14px; box-shadow: var(--ws-shadow); display: flex; flex-direction: column; gap: 11px; }
                 #letterboxdUserPage .ws-acct.film { border-top: 2px solid var(--ws-film); } #letterboxdUserPage .ws-acct.tv { border-top: 2px solid var(--ws-tv); }
@@ -249,6 +254,7 @@
                                 <div class="ws-tile"><div class="n ws-red" id="statFailed">-</div><div class="k ws-label">Failed</div></div>
                             </div>
                             <div class="ws-sect-title"><h2>Recent activity</h2><span class="rule"></span></div>
+                            <input type="search" class="ws-input" id="historySearch" placeholder="Search titles" aria-label="Search activity by title" autocomplete="off" style="max-width:320px;margin-bottom:10px;" />
                             <div class="ws-filters" id="ovStatusFilters">
                                 <button type="button" class="ws-chip on" data-s="all">All</button>
                                 <button type="button" class="ws-chip" data-s="hide-skipped">Hide skipped</button>
@@ -262,6 +268,7 @@
                             </div>
                             <div class="ws-panel" style="overflow-x:auto;"><table class="ws-table"><thead><tr><th>Title</th><th>Status</th><th>Source</th><th>When</th><th></th></tr></thead><tbody id="historyBody"><tr><td colspan="5" style="padding:2em;text-align:center;" class="ws-muted">Loading…</td></tr></tbody></table></div>
                             <div id="historyPagination" style="display:none;margin-top:12px;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;"><button type="button" class="ws-btn" id="historyPrev">‹ Prev</button><span id="historyPageInfo" class="ws-muted ws-mono" style="margin:0 8px;"></span><button type="button" class="ws-btn" id="historyNext">Next ›</button></div>
+                            <div id="historyMoreRow" style="display:none;margin-top:12px;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;"><button type="button" class="ws-btn" id="historyMore">Load older history</button><span id="historyMoreInfo" class="ws-muted ws-mono"></span></div>
                         </section>
                         <section class="ws-view" data-sec="accounts">
                             <div class="ws-head"><div><h1>My accounts</h1><p>Link your Letterboxd (film) and Serializd (TV) accounts. We log what you watch to each.</p></div></div>
@@ -274,7 +281,7 @@
                 <dialog class="ws-modal-ov" id="acctModal" aria-labelledby="acctModalTitle"><div class="ws-modal">
                     <button type="button" class="ws-modal-x" aria-label="Close">&times;</button>
                     <h3 id="acctModalTitle">Link a diary</h3>
-                    <div class="ws-row"><label class="ws-field" for="mSvc">Service</label><select class="ws-input" id="mSvc"><option value="serializd">Serializd — TV</option><option value="letterboxd">Letterboxd — Film</option></select></div>
+                    <div class="ws-row"><label class="ws-field" for="mSvc">Service</label><select class="ws-input" id="mSvc"><option value="serializd">Serializd: TV</option><option value="letterboxd">Letterboxd: Film</option></select></div>
                     <div class="ws-row"><label class="ws-field" id="mUserLabel" for="mUsername">Email or username</label><input type="text" class="ws-input" id="mUsername" autocomplete="off" /></div>
                     <div class="ws-row"><label class="ws-field" for="mPassword">Password<span class="ws-saved" id="mPasswordSaved" hidden>Saved</span></label><input type="password" class="ws-input" id="mPassword" autocomplete="new-password" /></div>
                     <!-- NOTE: these ids deliberately avoid the word "cookie". Privacy and
@@ -328,7 +335,7 @@
                     var root = (me && (me.closest('#letterboxdUserPage') || (me.parentNode && me.parentNode.querySelector('#letterboxdUserPage')))) || document.getElementById('letterboxdUserPage');
                     function byId(id) { return root.querySelector('#' + id); }
                     var U = {
-                        serverUrl: '', token: '', ovFilter: 'all', merged: [], lb: [], sz: [], editing: null,
+                        serverUrl: '', token: '', ovFilter: 'all', merged: [], seen: {}, lb: [], sz: [], editing: null,
                         reviewSvc: '', reviewTmdb: 0, reviewSlug: '',
                         resolveAuth: function () {
                             try { if (typeof ApiClient !== 'undefined') { this.serverUrl = ApiClient.serverAddress(); this.token = ApiClient.accessToken(); if (this.serverUrl && this.token) return true; } } catch (e) {}
@@ -470,7 +477,11 @@
                                 // Only the loaders a Retry button can name.
                                 if (['loadOverview', 'loadAccounts'].indexOf(fn) >= 0) self[fn]();
                             });
+                            byId('historySearch').addEventListener('input', function () { self.ovQuery = this.value.trim().toLowerCase(); self.ovPage = 0; self.renderOverview(); });
+                            byId('historyMore').addEventListener('click', function () { self.loadMore(); });
                             byId('historyBody').addEventListener('click', function (e) {
+                                var g = e.target.closest('.ws-grp-btn');
+                                if (g) { self.toggleGroup(this, g); return; }
                                 var b = e.target.closest('.ws-review-btn'); if (!b) return;
                                 self.openReview(b.getAttribute('data-svc'), parseInt(b.getAttribute('data-tmdb'), 10) || 0, b.getAttribute('data-title'),
                                     b.getAttribute('data-slug'), b.getAttribute('data-season'), b.getAttribute('data-episode'));
@@ -494,7 +505,9 @@
 
                         loadOverview: function () {
                             var self = this, LB = 'Jellyfin.Plugin.LetterboxdSync', SZ = 'Jellyfin.Plugin.LetterboxdSync/Serializd';
-                            Promise.all([self.get(LB + '/Stats'), self.get(SZ + '/Stats'), self.get(LB + '/History?count=250&offset=0'), self.get(SZ + '/History?count=250&offset=0')].map(function (p) { return p.then(self.json); }))
+                            self.histSrc = { letterboxd: { base: LB, loaded: 0, total: 0, oldest: null }, serializd: { base: SZ, loaded: 0, total: 0, oldest: null } };
+                            var gen = self.histGen = (self.histGen || 0) + 1;
+                            Promise.all([self.get(LB + '/Stats').then(self.json), self.get(SZ + '/Stats').then(self.json), self.fetchHistory('letterboxd'), self.fetchHistory('serializd')])
                                 .then(function (res) {
                                     var fs = res[0] || {}, ts = res[1] || {};
                                     byId('statFilm').textContent = fs.total || 0;
@@ -505,15 +518,82 @@
                                     byId('statSynced').textContent = (fs.success || 0) + (ts.success || 0);
                                     byId('statRewatches').textContent = (fs.rewatches || 0) + (ts.rewatches || 0);
                                     byId('statFailed').textContent = (fs.failed || 0) + (ts.failed || 0);
-                                    var fe = ((res[2] && res[2].events) || []).map(function (e) { e._svc = 'letterboxd'; return e; });
-                                    var te = ((res[3] && res[3].events) || []).map(function (e) { e._svc = 'serializd'; return e; });
-                                    self.merged = fe.concat(te).sort(function (a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); });
+                                    if (gen !== self.histGen) return;
+                                    self.merged = []; self.seen = {};
+                                    self.addEvents(res[2].concat(res[3]));
                                     self.renderOverview();
                                     self.renderSparks();
+                                    self.renderMore();
                                 }).catch(function () {
+                                    if (gen !== self.histGen) return;
                                     byId('historyBody').innerHTML = self.errorRow('your activity', 'loadOverview');
                                     byId('historyPagination').style.display = 'none';
+                                    byId('historyMoreRow').style.display = 'none';
                                 });
+                        },
+                        // The History endpoints page by offset. The server caps a page at 250; ask for 200
+                        // per page and read the server's total to know whether more is left.
+                        histChunk: 200,
+                        byNewest: function (events) { return events.sort(function (a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); }); },
+                        fetchHistory: function (svc) {
+                            var self = this, h = self.histSrc[svc];
+                            return self.get(h.base + '/History?count=' + self.histChunk + '&offset=' + h.loaded).then(self.json).then(function (d) {
+                                var events = (d && d.events) || [];
+                                h.loaded += events.length;
+                                h.total = events.length ? Math.max((d && d.total) || 0, h.loaded) : h.loaded;
+                                if (events.length) h.oldest = new Date(events[events.length - 1].Timestamp).getTime();
+                                return events.map(function (e) { e._svc = svc; return e; });
+                            });
+                        },
+                        // Offset paging: an event logged between two loads shifts the older ones down, so the
+                        // next page starts with rows already shown. Keep one copy of each.
+                        eventKey: function (e) { return [e._svc, e.Timestamp, e.UserId || e.Username || '', e.Account || '', e.FilmTitle, e.Status, e.Source, e.TmdbId].join('|'); },
+                        addEvents: function (events) {
+                            var self = this, fresh = events.filter(function (e) {
+                                var k = self.eventKey(e);
+                                if (self.seen[k]) return false;
+                                self.seen[k] = true; return true;
+                            });
+                            self.merged = self.byNewest(self.merged.concat(fresh));
+                        },
+                        // Each service pages on its own, so past the oldest loaded event of a service that has
+                        // more, the merged list would skip that service's rows. Show only what is complete.
+                        visibleEvents: function (only) {
+                            var cut = null, src = this.histSrc || {};
+                            Object.keys(src).forEach(function (svc) {
+                                var h = src[svc];
+                                if ((!only || only === 'all' || only === svc) && h.loaded < h.total && h.oldest != null && (cut == null || h.oldest > cut)) cut = h.oldest;
+                            });
+                            return cut == null ? this.merged : this.merged.filter(function (e) { return new Date(e.Timestamp).getTime() >= cut; });
+                        },
+                        // Search and filters cover the loaded events only; say so while older ones are left.
+                        noMatchText: function () {
+                            var src = this.histSrc || {}, more = Object.keys(src).some(function (k) { return src[k].loaded < src[k].total; });
+                            return more ? 'Nothing matches in the loaded history. Load older history to look further back.' : 'No items match these filters.';
+                        },
+                        renderMore: function () {
+                            var lb = this.histSrc.letterboxd, sz = this.histSrc.serializd;
+                            var more = lb.loaded < lb.total || sz.loaded < sz.total;
+                            byId('historyMoreRow').style.display = more ? 'flex' : 'none';
+                            byId('historyMoreInfo').textContent = (lb.loaded + sz.loaded) + ' of ' + (lb.total + sz.total) + ' events loaded';
+                        },
+                        loadMore: function () {
+                            var self = this, btn = byId('historyMore'), jobs = [], gen = self.histGen;
+                            if (btn.disabled) return;
+                            Object.keys(self.histSrc).forEach(function (svc) {
+                                var h = self.histSrc[svc];
+                                if (h.loaded >= h.total) return;
+                                // A reload since this started replaced the list; its pages would not line up.
+                                jobs.push(self.fetchHistory(svc).then(function (events) { if (gen === self.histGen) self.addEvents(events); }));
+                            });
+                            btn.disabled = true;
+                            byId('historyMoreInfo').textContent = 'Loading…';
+                            Promise.all(jobs).then(function () {
+                                btn.disabled = false; if (gen !== self.histGen) return; self.renderOverview(); self.renderMore();
+                            }, function () {
+                                btn.disabled = false; if (gen !== self.histGen) return; self.renderOverview(); self.renderMore();
+                                byId('historyMoreInfo').innerHTML = '<span class="ws-red">Couldn\'t load older history. Try again.</span>';
+                            });
                         },
                         json: function (r) { if (!r.ok) throw r; return r.json(); },
                         // For writes: success is the status alone, so a reply without a JSON body still counts as saved.
@@ -568,6 +648,11 @@
                             if (sf) sf.innerHTML = build('letterboxd', 'var(--ws-film)', 'var(--ws-film-soft)');
                             if (st) st.innerHTML = build('serializd', 'var(--ws-tv)', 'var(--ws-tv-soft)');
                         },
+                        toggleGroup: function (body, btn) {
+                            var open = btn.getAttribute('aria-expanded') !== 'true';
+                            btn.setAttribute('aria-expanded', String(open));
+                            body.querySelectorAll('[data-grp-of="' + btn.getAttribute('data-grp') + '"]').forEach(function (r) { r.hidden = !open; });
+                        },
                         statusOf: function (e) {
                             if (e.Source === 'review') return 'Reviewed';
                             return typeof e.Status === 'string' ? e.Status : (['Success', 'Skipped', 'Failed', 'Rewatch', 'Requested', 'Rated'][e.Status] || 'Success');
@@ -580,29 +665,16 @@
                             return st === s;
                         },
                         renderOverview: function () {
-                            var self = this, f = this.ovFilter;
-                            var all = this.merged.filter(function (e) { return (f === 'all' || e._svc === f) && self.matchesStatus(e); });
-                            if (!all.length) { byId('historyBody').innerHTML = '<tr><td colspan="5" style="padding:2em;text-align:center;" class="ws-muted">' + (this.merged.length ? 'No items match these filters.' : 'No activity yet. Link an account and start watching.') + '</td></tr>'; byId('historyPagination').style.display = 'none'; return; }
-                            var ps = this.ovPageSize || 40, total = all.length, pages = Math.max(1, Math.ceil(total / ps));
+                            var self = this, f = this.ovFilter, q = this.ovQuery || '';
+                            var all = this.visibleEvents(f).filter(function (e) {
+                                return (f === 'all' || e._svc === f) && self.matchesStatus(e) && (!q || (e.FilmTitle || '').toLowerCase().indexOf(q) >= 0);
+                            });
+                            if (!all.length) { byId('historyBody').innerHTML = '<tr><td colspan="5" style="padding:2em;text-align:center;" class="ws-muted">' + (this.merged.length ? self.noMatchText() : 'No activity yet. Link an account and start watching.') + '</td></tr>'; byId('historyPagination').style.display = 'none'; return; }
+                            var units = this.groupRuns(all);
+                            var ps = this.ovPageSize || 40, total = units.length, pages = Math.max(1, Math.ceil(total / ps));
                             if ((this.ovPage || 0) >= pages) this.ovPage = pages - 1;
                             var start = (this.ovPage || 0) * ps;
-                            byId('historyBody').innerHTML = all.slice(start, start + ps).map(function (e) {
-                                var svc = e._svc === 'serializd' ? 'tv' : 'film';
-                                var status = typeof e.Status === 'string' ? e.Status : ['Success', 'Skipped', 'Failed', 'Rewatch', 'Requested', 'Rated'][e.Status] || 'Success';
-                                var title = (e.FilmTitle || '').split(' · '), t = title[0], m = title[1] || '';
-                                var ts = new Date(e.Timestamp), when = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), shortWhen = self.shortDate(ts);
-                                // A Letterboxd review needs the film's slug; rows without one (a paused or failed lookup) can't be reviewed.
-                                var canReview = (status === 'Success' || status === 'Rewatch' || status === 'Skipped') && (e._svc === 'serializd' || !!e.FilmSlug);
-                                var seM = (e._svc === 'serializd') ? (m || '').match(/S(\d+)E(\d+)/) : null;
-                                var btn = (canReview && e.TmdbId) ? '<button type="button" class="ws-review-btn" data-svc="' + self.esc(e._svc) + '" data-tmdb="' + self.esc(e.TmdbId) +
-                                    '" data-title="' + self.esc(t) + '" data-slug="' + self.esc(e.FilmSlug) + '" data-season="' + (seM ? seM[1] : '') + '" data-episode="' + (seM ? seM[2] : '') + '">Review</button>' : '';
-                                if (e.Source === 'review') status = 'Reviewed';
-                                status = self.esc(status);
-                                var pill = e.Error
-                                    ? '<span class="ws-pill ' + status + ' has-reason" title="' + self.esc(e.Error) + '">' + status + ' <span class="ws-info-i">i</span></span>'
-                                    : '<span class="ws-pill ' + status + '">' + status + '</span>';
-                                return '<tr><td><div class="ws-titlecell ws-tc"><span class="ws-badge ' + svc + '">' + (svc === 'tv' ? 'TV' : 'MV') + '</span><div><div class="t">' + self.esc(t) + '</div><div class="m">' + self.esc(m) + '<span class="ws-mwhen">' + (m ? ' · ' : '') + shortWhen + '</span></div></div></div></td><td>' + pill + '</td><td class="ws-src">' + self.esc(e.Source) + '</td><td class="ws-when">' + when + '</td><td>' + btn + '</td></tr>';
-                            }).join('');
+                            byId('historyBody').innerHTML = this.unitsHtml(units.slice(start, start + ps));
                             var pag = byId('historyPagination');
                             if (total > ps) {
                                 pag.style.display = 'flex';
@@ -610,6 +682,64 @@
                                 byId('historyPrev').disabled = (this.ovPage || 0) === 0;
                                 byId('historyNext').disabled = (this.ovPage || 0) >= pages - 1;
                             } else { pag.style.display = 'none'; }
+                        },
+                        whenOf: function (e) {
+                            var ts = new Date(e.Timestamp);
+                            return ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        },
+                        pillHtml: function (status, reason) {
+                            status = this.esc(status);
+                            if (!reason) return '<span class="ws-pill ' + status + '">' + status + '</span>';
+                            return '<span class="ws-pill ' + status + ' has-reason" title="' + this.esc(reason) + '">' + status + ' <span class="ws-info-i">i</span></span>';
+                        },
+                        rowHtml: function (e, trAttrs) {
+                            var self = this, svc = e._svc === 'serializd' ? 'tv' : 'film';
+                            var status = self.statusOf(e), raw = self.statusOf({ Status: e.Status });
+                            var title = (e.FilmTitle || '').split(' · '), t = title[0], m = title[1] || '';
+                            // A Letterboxd review needs the film's slug; rows without one (a paused or failed lookup) can't be reviewed.
+                            var canReview = (raw === 'Success' || raw === 'Rewatch' || raw === 'Skipped') && (e._svc === 'serializd' || !!e.FilmSlug);
+                            var seM = (e._svc === 'serializd') ? (m || '').match(/S(\d+)E(\d+)/) : null;
+                            var btn = (canReview && e.TmdbId) ? '<button type="button" class="ws-review-btn" data-svc="' + self.esc(e._svc) + '" data-tmdb="' + self.esc(e.TmdbId) +
+                                '" data-title="' + self.esc(t) + '" data-slug="' + self.esc(e.FilmSlug) + '" data-season="' + (seM ? seM[1] : '') + '" data-episode="' + (seM ? seM[2] : '') + '">Review</button>' : '';
+                            return '<tr' + (trAttrs || '') + '><td><div class="ws-titlecell ws-tc"><span class="ws-badge ' + svc + '">' + (svc === 'tv' ? 'TV' : 'MV') + '</span><div><div class="t">' + self.esc(t) + '</div><div class="m">' + self.esc(m) + '<span class="ws-mwhen">' + (m ? ' · ' : '') + self.shortDate(new Date(e.Timestamp)) + '</span></div></div></div></td><td>' + self.pillHtml(status, e.Error) + '</td><td class="ws-src">' + self.esc(e.Source) + '</td><td class="ws-when">' + self.whenOf(e) + '</td><td>' + btn + '</td></tr>';
+                        },
+                        // Consecutive episodes of one show collapse into one expandable row, so a binge
+                        // doesn't push everything else off the page. A run of one stays a plain row.
+                        groupRuns: function (events) {
+                            var units = [], episode = /^S\d+E\d+$/;
+                            events.forEach(function (e) {
+                                var parts = (e.FilmTitle || '').split(' · '), last = units[units.length - 1];
+                                var isEpisode = e._svc === 'serializd' && episode.test(parts[1] || '');
+                                // One run is one show on one account; another account's watch starts a new row.
+                                var owner = (e.UserId || e.Username || '') + '|' + (e.Account || '');
+                                if (isEpisode && last && last.show === parts[0] && last.owner === owner) { last.events.push(e); return; }
+                                units.push({ show: isEpisode ? parts[0] : null, owner: owner, events: [e] });
+                            });
+                            return units;
+                        },
+                        unitsHtml: function (units) {
+                            var self = this;
+                            return units.map(function (u, i) {
+                                if (u.events.length < 2) return self.rowHtml(u.events[0]);
+                                var attrs = ' class="ws-grp-item" data-grp-of="' + i + '" hidden';
+                                return self.groupHtml(u, i) + u.events.map(function (e) { return self.rowHtml(e, attrs); }).join('');
+                            }).join('');
+                        },
+                        groupHtml: function (u, id) {
+                            var self = this, newest = u.events[0];
+                            // The range runs from the lowest to the highest episode, whatever order they were watched in.
+                            var eps = u.events.map(function (e) { var m = /^S(\d+)E(\d+)$/.exec((e.FilmTitle || '').split(' · ')[1] || ''); return { s: +m[1], e: +m[2] }; })
+                                .sort(function (a, b) { return a.s - b.s || a.e - b.e; });
+                            var epName = function (x) { return 'S' + x.s + 'E' + x.e; }, first = eps[0], lastEp = eps[eps.length - 1];
+                            var range = epName(first) === epName(lastEp) ? epName(first) : epName(first) + '–' + epName(lastEp);
+                            var uniq = function (fn) { return u.events.map(fn).filter(function (v, i, a) { return a.indexOf(v) === i; }); };
+                            var statuses = uniq(function (e) { return self.statusOf(e); }), sources = uniq(function (e) { return e.Source || ''; });
+                            // A failure inside a run must show on its folded row, not only once it is opened.
+                            var failed = u.events.filter(function (e) { return self.statusOf(e) === 'Failed'; }).length;
+                            var pill = statuses.length === 1 ? self.pillHtml(statuses[0]) : (failed ? '<span class="ws-pill Failed">' + failed + ' failed</span>' : '<span class="ws-pill Skipped">Mixed</span>');
+                            return '<tr class="ws-grp"><td><button type="button" class="ws-grp-btn ws-tc" data-grp="' + id + '" aria-expanded="false"><span class="ws-badge tv">TV</span><div><div class="t">' + self.esc(u.show) +
+                                ' <span class="ws-grp-caret" aria-hidden="true">▸</span></div><div class="m">' + u.events.length + ' episodes · ' + self.esc(range) + '<span class="ws-mwhen"> · ' + self.shortDate(new Date(newest.Timestamp)) + '</span></div></div></button></td><td>' + pill +
+                                '</td><td class="ws-src">' + (sources.length === 1 ? self.esc(sources[0]) : '') + '</td><td class="ws-when">' + self.whenOf(newest) + '</td><td></td></tr>';
                         },
 
                         syncLabels: function () {
@@ -740,7 +870,7 @@
                                 .concat([['Sync ratings to Letterboxd', 'chkRatings', a.syncRatings !== false, 'Rate in Jellyfin after watching → your Letterboxd film rating.']])
                                 .concat([['Only sync recently played', 'chkDate', !!a.enableDateFilter, 'Limit the catch-up to the last N days.'],
                                 ['Primary account', 'chkPrimary', !!a.isPrimary, 'Wins on tie-breaks when you have several.'],
-                                ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.syncWatchlist : !!a.enableWatchlistSync, 'Watchlist → Jellyfin ' + (svc === 'serializd' ? 'collection + playlist. Everyone who can see those shows can see the collection.' : 'playlist.')],
+                                ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.syncWatchlist : !!a.enableWatchlistSync, this.watchDesc(svc)],
                                 ['Auto-request via Seerr', 'chkSeerr', !!a.autoRequestWatchlist, 'Missing from the library → request via Seerr.'],
                                 ['Backfill Seerr requests', 'chkBackfill', !!a.backfillAvailableRequests, 'Also attribute a Seerr request for already-available titles.'],
                                 ['Mirror watchlist to Seerr', 'chkMirror', !!a.mirrorJellyseerrWatchlist, 'Push this watchlist into your Seerr watchlist (primary account only).'],
@@ -750,7 +880,9 @@
                             return rows.map(function (r) { return '<label><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>'; }).join('') +
                                 '<div class="ws-row" id="dateDaysRow" style="display:' + (a.enableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field" for="chkDateDays">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.dateFilterDays || 7) + '" /></div>';
                         },
-                        onSvcChange: function () { var svc = byId('mSvc').value; byId('mUserLabel').textContent = svc === 'serializd' ? 'Email or username' : 'Letterboxd username'; byId('mAuthBlobRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; byId('mUserAgentRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; var ratingsBox = byId('chkRatings'); if (ratingsBox) ratingsBox.closest('label').style.display = svc === 'letterboxd' ? '' : 'none'; var uname = byId('mUsername').value.trim(); byId('mWatchName').placeholder = svc === 'serializd' ? 'Serializd Watchlist' : ('Letterboxd Watchlist' + (uname ? ' (' + uname + ')' : '')); },
+                        // The one toggle whose wording depends on the service; onSvcChange keeps it in step.
+                        watchDesc: function (svc) { return 'Watchlist → Jellyfin ' + (svc === 'serializd' ? 'collection + playlist. Everyone who can see those shows can see the collection.' : 'playlist.'); },
+                        onSvcChange: function () { var svc = byId('mSvc').value; var watchBox = byId('chkWatch'), watchDesc = watchBox && watchBox.closest('label').querySelector('.desc'); if (watchDesc) watchDesc.textContent = this.watchDesc(svc); byId('mUserLabel').textContent = svc === 'serializd' ? 'Email or username' : 'Letterboxd username'; byId('mAuthBlobRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; byId('mUserAgentRow').style.display = svc === 'letterboxd' ? 'block' : 'none'; var ratingsBox = byId('chkRatings'); if (ratingsBox) ratingsBox.closest('label').style.display = svc === 'letterboxd' ? '' : 'none'; var uname = byId('mUsername').value.trim(); byId('mWatchName').placeholder = svc === 'serializd' ? 'Serializd Watchlist' : ('Letterboxd Watchlist' + (uname ? ' (' + uname + ')' : '')); },
                         fillSecret: function (id, saved, keepText, emptyText) {
                             var el = byId(id), clearRow = byId(id + 'ClearRow');
                             el.value = '';

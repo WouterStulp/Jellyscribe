@@ -22,6 +22,8 @@ public class DashboardMarkupTests
         new object[] { "userPage.html", "#letterboxdUserPage" },
     };
 
+    public static IEnumerable<object[]> Files() => Pages().Select(p => new[] { p[0] });
+
     private static string Read(string file)
     {
         var asm = typeof(Plugin).Assembly;
@@ -151,6 +153,50 @@ public class DashboardMarkupTests
         Assert.Contains("id=\"mPassword\" autocomplete=\"new-password\"", page, StringComparison.Ordinal);
         Assert.DoesNotContain("current-password", page, StringComparison.Ordinal);
         Assert.Contains(root + " :focus-visible { outline: 2px solid var(--ws-focus);", page, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(Files))]
+    public void ActivityList_CanBeSearched_AndPagedToItsEnd(string file)
+    {
+        var page = Read(file);
+        Assert.Contains("id=\"historySearch\" placeholder=\"Search titles\" aria-label=\"Search activity by title\"", page, StringComparison.Ordinal);
+        Assert.Contains("<button type=\"button\" class=\"ws-btn\" id=\"historyMore\">Load older history</button>", page, StringComparison.Ordinal);
+
+        // GET History serves at most 200 Letterboxd events a page; asking for more silently got 200
+        // and the list stopped there. Each page asks for what the server gives, then pages by offset.
+        Assert.Matches(@"histChunk: 200,", page);
+        Assert.DoesNotMatch(@"History[^\n]*count(=|: )250", page);
+        Assert.Matches(@"offset(: |=' \+ )h\.loaded", page);
+        // The merged list stops at the oldest loaded event of a service with more to load, and an event
+        // that a later page repeats is shown once.
+        Assert.Contains("all = this.visibleEvents(f).filter(", page, StringComparison.Ordinal);
+        Assert.Contains("if (self.seen[k]) return false;", page, StringComparison.Ordinal);
+
+        // The group header of a binge is a button that says whether it is open, and every value it
+        // shows (show name, first and last episode) goes through the page's escaper.
+        var at = page.IndexOf("groupHtml: function", StringComparison.Ordinal);
+        Assert.True(at >= 0, "no groupHtml");
+        var groupHtml = Regex.Match(page.Substring(at), @"^groupHtml: function[\s\S]*?\n\s*\},").Value;
+        Assert.NotEmpty(groupHtml);
+        Assert.Matches(@"self\.esc(Attr)?\(u\.show\)", groupHtml);
+        Assert.Matches(@"self\.esc(Attr)?\(range\)", groupHtml);
+        Assert.Contains("class=\"ws-grp-btn ws-tc\" data-grp=\"' + id + '\" aria-expanded=\"false\"", page, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(Files))]
+    public void AccountDialog_NamesTheServicesPlainly_AndRewordsTheWatchlistToggleWhenTheServiceChanges(string file)
+    {
+        var page = Read(file);
+        Assert.Contains("<option value=\"serializd\">Serializd: TV</option><option value=\"letterboxd\">Letterboxd: Film</option>", page, StringComparison.Ordinal);
+        // A new account opens as Serializd; switching it to Letterboxd must reword the watchlist toggle too.
+        var at = page.IndexOf("onSvcChange: function", StringComparison.Ordinal);
+        Assert.True(at >= 0, "no onSvcChange");
+        var end = new[] { "fillSecret: function", "openAccount: function" }
+            .Select(n => page.IndexOf(n, at, StringComparison.Ordinal)).Where(i => i > at).Min();
+        Assert.Contains("watchDesc.textContent = this.watchDesc(svc)", page.Substring(at, end - at), StringComparison.Ordinal);
+        Assert.Matches(@"'chkWatch', svc === 'serializd' \? !!a\.\w+ : !!a\.\w+, this\.watchDesc\(svc\)\]", page);
     }
 
     [Fact]
