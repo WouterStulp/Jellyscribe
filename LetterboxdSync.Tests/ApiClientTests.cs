@@ -127,7 +127,7 @@ public class ApiClientAuthTests
         });
 
         using var client = new LetterboxdApiClient(TestLogger, handler);
-        var ex = await Assert.ThrowsAsync<Exception>(() => client.AuthenticateAsync("bad", "creds"));
+        var ex = await Assert.ThrowsAsync<LetterboxdApiAuthException>(() => client.AuthenticateAsync("bad", "creds"));
         Assert.Contains("invalid_grant", ex.Message);
     }
 
@@ -235,7 +235,7 @@ public class ApiClientTokenCacheIsolationTests
         await owner.AuthenticateAsync(username, "right");
 
         using var attacker = new LetterboxdApiClient(TestLogger, handler);
-        await Assert.ThrowsAsync<Exception>(() => attacker.AuthenticateAsync(username, "wrong"));
+        await Assert.ThrowsAsync<LetterboxdApiAuthException>(() => attacker.AuthenticateAsync(username, "wrong"));
 
         Assert.Equal(2, grants.Count);
         Assert.Contains("password=wrong", grants[1]);
@@ -268,7 +268,7 @@ public class ApiClientTokenCacheIsolationTests
         await owner.AuthenticateAsync(username, "right");
 
         using var attacker = new LetterboxdApiClient(TestLogger, handler);
-        await Assert.ThrowsAsync<Exception>(() => attacker.AuthenticateAsync(username, "wrong"));
+        await Assert.ThrowsAsync<LetterboxdApiAuthException>(() => attacker.AuthenticateAsync(username, "wrong"));
         Assert.DoesNotContain(grants, g => g.Contains("grant_type=refresh_token"));
 
         // The owner's own stale token still goes through the refresh path.
@@ -281,6 +281,8 @@ public class ApiClientTokenCacheIsolationTests
 public class ApiClientFilmLookupTests
 {
     private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
+
+    public ApiClientFilmLookupTests() => LetterboxdApiClient.ResetFilmCacheForTesting(550, 99999999);
 
     [Fact]
     public async Task LookupFilmByTmdbIdAsync_ReturnsFilmResult()
@@ -342,7 +344,7 @@ public class ApiClientFilmLookupTests
 
         using var client = new LetterboxdApiClient(TestLogger, handler);
         await client.AuthenticateAsync("user", "pass");
-        var ex = await Assert.ThrowsAsync<Exception>(() => client.LookupFilmByTmdbIdAsync(99999999));
+        var ex = await Assert.ThrowsAsync<FilmNotFoundException>(() => client.LookupFilmByTmdbIdAsync(99999999));
         Assert.Contains("not found", ex.Message);
     }
 }
@@ -350,6 +352,40 @@ public class ApiClientFilmLookupTests
 public class ApiClientDiaryTests
 {
     private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
+
+    [Theory]
+    [InlineData("th-TH")]  // Buddhist calendar: 2026 is 2569
+    [InlineData("fa-IR")]  // Persian calendar
+    public async Task MarkAsWatchedAsync_NonGregorianServerCulture_SendsGregorianDate(string culture)
+    {
+        string? capturedBody = null;
+        var handler = ApiTestHelpers.CreateAuthenticatedHandler(extraHandler: (request) =>
+        {
+            if (request.Method == HttpMethod.Post &&
+                request.RequestUri?.AbsolutePath.EndsWith("/log-entries") == true)
+            {
+                capturedBody = request.Content?.ReadAsStringAsync().Result;
+                return new HttpResponseMessage(HttpStatusCode.Created);
+            }
+            return null;
+        });
+
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo(culture);
+            using var client = new LetterboxdApiClient(TestLogger, handler);
+            await client.AuthenticateAsync("user", "pass");
+            await client.MarkAsWatchedAsync("fight-club", "2a9q", new DateTime(2026, 10, 6), liked: false);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
+
+        using var doc = JsonDocument.Parse(capturedBody!);
+        Assert.Equal("2026-10-06", doc.RootElement.GetProperty("diaryDetails").GetProperty("diaryDate").GetString());
+    }
 
     [Fact]
     public async Task MarkAsWatchedAsync_SendsCorrectBody()
@@ -471,6 +507,8 @@ public class ApiClientDiaryTests
 public class ApiClientRateLimitTests
 {
     private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
+
+    public ApiClientRateLimitTests() => LetterboxdApiClient.ResetFilmCacheForTesting(123);
 
     [Fact]
     public async Task SendSigned_429_RetriesAfterDelay()

@@ -4,13 +4,14 @@
     <title>Jellyscribe</title>
 </head>
 <body>
-    <div id="letterboxdSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage ws-app" style="visibility:hidden;"
+    <div id="letterboxdSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" style="visibility:hidden;"
          data-require="emby-input,emby-button,emby-checkbox,emby-select">
         <div data-role="content">
             <div class="content-primary">
                 <style>
-                /* Admin-only rules; the shared design system is in jellyscribe.css. */
-                #letterboxdSyncConfigPage .ws-btn svg { width: 15px; height: 15px; }
+                /* Admin-page-only rules; the shared styles and the bundled fonts are in jellyscribe.css. */
+                #letterboxdSyncConfigPage { --ws-rail-w: 248px; --ws-main-x: 28px; --ws-filters-gap: 18px; }
+                #letterboxdSyncConfigPage .ws { gap: 0; }
                 #letterboxdSyncConfigPage .ws-chip { transition: .13s; }
                 #letterboxdSyncConfigPage .ws-ugroup { margin-bottom: 22px; }
                 #letterboxdSyncConfigPage .ws-uhead { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
@@ -31,12 +32,13 @@
                             <div><b>JellyScribe</b><small>Film &amp; TV diaries</small></div>
                         </div>
                         <nav class="ws-nav" id="wsNav">
+                            <div class="ws-navlabel">You</div>
+                            <button type="button" class="active" aria-current="page" data-sec="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</button>
+                            <button type="button" data-sec="activity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12h4l2 6 4-14 2 8h4"/></svg>Activity</button>
                             <div class="ws-navlabel">Server</div>
-                            <a class="active" data-sec="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</a>
-                            <a data-sec="accounts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M4 20c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="17" cy="8" r="2.6"/></svg>Accounts<span class="ws-count" id="acctCount"></span></a>
-                            <a data-sec="activity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12h4l2 6 4-14 2 8h4"/></svg>Activity</a>
-                            <a data-sec="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>Integrations</a>
-                            <a data-sec="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 8h8M8 12h8M8 16h5"/></svg>Logs</a>
+                            <button type="button" data-sec="accounts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M4 20c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="17" cy="8" r="2.6"/></svg>Accounts<span class="ws-count" id="acctCount"></span></button>
+                            <button type="button" data-sec="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>Integrations</button>
+                            <button type="button" data-sec="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 8h8M8 12h8M8 16h5"/></svg>Logs</button>
                         </nav>
                         </div>
                     </aside>
@@ -45,7 +47,7 @@
                         <!-- OVERVIEW -->
                         <section class="ws-view show" data-sec="overview">
                             <div class="ws-head">
-                                <div><h1>Overview</h1><p>Everything Jellyfin has scrobbled across both diaries.</p></div>
+                                <div><h1>Your overview</h1><p>What Jellyscribe has logged for your own Jellyfin user, across both diaries. Other users see theirs on their own Jellyscribe page. Sync all now runs the scheduled sync for every user.</p></div>
                                 <div style="display:flex;gap:8px;">
                                     <button type="button" class="ws-btn" id="runWatchlistBtn">Sync all watchlists</button>
                                     <button type="button" class="ws-btn primary" id="runSyncBtn">Sync all now</button>
@@ -66,13 +68,13 @@
                             <div class="ws-tiles" style="margin-top:10px;">
                                 <div class="ws-tile film"><div class="n" id="statFilm">-</div><div class="k ws-label">Films logged · Letterboxd</div><svg class="ws-spark" id="sparkFilm" viewBox="0 0 120 26" preserveAspectRatio="none"></svg></div>
                                 <div class="ws-tile tv"><div class="n" id="statTv">-</div><div class="k ws-label">Episodes logged · Serializd</div><svg class="ws-spark" id="sparkTv" viewBox="0 0 120 26" preserveAspectRatio="none"></svg></div>
-                                <div class="ws-tile" style="--ac:var(--ws-primary);"><div class="n" style="color:var(--ws-primary);" id="statWatchlist">-</div><div class="k ws-label">On watchlists</div><div class="ws-muted" id="statWatchlistSub" style="font-size:11px;margin-top:4px;"></div></div>
+                                <div class="ws-tile" style="--ac:var(--ws-primary);"><div class="n" style="color:var(--ws-primary-text);" id="statWatchlist">-</div><div class="k ws-label">On watchlists</div><div class="ws-muted" id="statWatchlistSub" style="font-size:11px;margin-top:4px;"></div></div>
                                 <div class="ws-tile"><div class="n ws-green" id="statSynced">-</div><div class="k ws-label">Synced</div></div>
                                 <div class="ws-tile"><div class="n" style="color:var(--ws-info);" id="statRewatches">-</div><div class="k ws-label">Rewatches</div></div>
                                 <div class="ws-tile"><div class="n ws-red" id="statFailed">-</div><div class="k ws-label">Failed</div></div>
                             </div>
                             <div class="ws-sect-title"><h2>Recent activity</h2><span class="rule"></span></div>
-                            <input type="search" class="ws-input" id="historySearch" placeholder="Search titles" style="max-width:320px;margin-bottom:10px;" />
+                            <input type="search" class="ws-input" id="historySearch" placeholder="Search titles" aria-label="Search activity by title" autocomplete="off" style="max-width:320px;margin-bottom:10px;" />
                             <div class="ws-filters" id="ovStatusFilters">
                                 <button type="button" class="ws-chip on" data-s="all">All</button>
                                 <button type="button" class="ws-chip" data-s="hide-skipped">Hide skipped</button>
@@ -92,6 +94,7 @@
                                 <span id="historyPageInfo" class="ws-muted ws-mono" style="margin:0 8px;"></span>
                                 <button type="button" class="ws-btn" id="historyNext">Next ›</button>
                             </div>
+                            <div id="historyMoreRow" style="display:none;margin-top:12px;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;"><button type="button" class="ws-btn" id="historyMore">Load older history</button><span id="historyMoreInfo" class="ws-muted ws-mono"></span></div>
                         </section>
 
                         <!-- ACCOUNTS -->
@@ -102,7 +105,7 @@
 
                         <!-- ACTIVITY -->
                         <section class="ws-view" data-sec="activity">
-                            <div class="ws-head"><div><h1>Activity</h1><p>Full sync log for the selected diary.</p></div></div>
+                            <div class="ws-head"><div><h1>Your activity</h1><p>Your own full sync log for the selected diary.</p></div></div>
                             <div class="ws-filters" id="actFilters">
                                 <button type="button" class="ws-chip on" data-f="letterboxd"><span class="ws-dot film"></span>Film</button>
                                 <button type="button" class="ws-chip" data-f="serializd"><span class="ws-dot tv"></span>TV</button>
@@ -119,23 +122,23 @@
                             <div class="ws-panel" style="padding:18px;margin-bottom:14px;">
                                 <div class="ws-sect-title" style="margin-top:0;"><h2>Seerr</h2><span class="rule"></span></div>
                                 <p class="ws-muted" style="font-size:12.5px;margin-top:0;">Auto-request titles missing from the library (films and TV shows).</p>
-                                <div class="ws-row"><label class="ws-field">Seerr URL</label><input type="text" class="ws-input" id="jellyseerrUrl" placeholder="http://192.168.1.122:5055" /></div>
-                                <div class="ws-row"><label class="ws-field">Seerr API key</label><input type="password" class="ws-input" id="jellyseerrApiKey" placeholder="Settings → General → API Key" /></div>
-                                <label class="ws-checks" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;margin:4px 0 12px;"><input type="checkbox" id="autoApproveJellyseerr" /><span>Auto-approve requests created by Jellyscribe<span class="desc" style="display:block;color:var(--ws-faint);font-size:11.5px;">Seerr only sends a request to Radarr/Sonarr once it's approved, and it decides that from the permissions of the user the request belongs to — not from this API key. With this on, Jellyscribe approves a pending request only for users who have Auto-Approve (or Manage Requests/Admin) in Seerr; everyone else's requests wait in Seerr's pending queue for you. Turn it off to review them all yourself.</span></span></label>
+                                <div class="ws-row"><label class="ws-field" for="jellyseerrUrl">Seerr URL</label><input type="text" class="ws-input" id="jellyseerrUrl" placeholder="http://seerr.local:5055" /></div>
+                                <div class="ws-row"><label class="ws-field" for="jellyseerrApiKey">Seerr API key<span class="ws-saved" id="jellyseerrApiKeySaved" hidden>Saved</span></label><input type="password" class="ws-input" id="jellyseerrApiKey" autocomplete="new-password" placeholder="Settings → General → API Key" /><label class="ws-muted" id="jellyseerrApiKeyClearRow" style="display:none;gap:7px;align-items:center;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="jellyseerrApiKeyClear" /> Remove saved key</label></div>
+                                <label class="ws-checks" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;margin:4px 0 12px;"><input type="checkbox" id="autoApproveJellyseerr" /><span>Auto-approve requests created by Jellyscribe<span class="desc" style="display:block;color:var(--ws-faint);font-size:11.5px;">Requests are made as each user's own Seerr account, so Seerr only approves them straight away for users with Auto-Approve. With this on, Jellyscribe approves the rest with this API key so they reach Radarr/Sonarr. Turn it off to review them in Seerr yourself.</span></span></label>
                                 <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testJellyseerrBtn">Test connection</button><span id="jellyseerrTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                             </div>
                             <div class="ws-panel" style="padding:18px;margin-bottom:14px;">
                                 <div class="ws-sect-title" style="margin-top:0;"><h2>Notifications (ntfy)</h2><span class="rule"></span></div>
                                 <p class="ws-muted" style="font-size:12.5px;margin-top:0;">Get a push notification when syncing needs attention: a login that keeps failing, or a film Jellyscribe gave up on. Leave the URL empty to turn this off.</p>
-                                <div class="ws-row"><label class="ws-field">Topic URL</label><input type="text" class="ws-input" id="ntfyUrl" placeholder="https://ntfy.sh/your-topic" /></div>
-                                <div class="ws-row"><label class="ws-field">Access token <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="password" class="ws-input" id="ntfyToken" placeholder="tk_…" /><label class="ws-muted" id="ntfyTokenClearRow" style="display:none;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="ntfyTokenClear" /> Clear the saved token</label></div>
+                                <div class="ws-row"><label class="ws-field" for="ntfyUrl">Topic URL</label><input type="text" class="ws-input" id="ntfyUrl" placeholder="https://ntfy.sh/your-topic" /></div>
+                                <div class="ws-row"><label class="ws-field" for="ntfyToken">Access token <span class="ws-muted" style="text-transform:none;">(optional)</span><span class="ws-saved" id="ntfyTokenSaved" hidden>Saved</span></label><input type="password" class="ws-input" id="ntfyToken" autocomplete="new-password" placeholder="tk_…" /><label class="ws-muted" id="ntfyTokenClearRow" style="display:none;gap:7px;align-items:center;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="ntfyTokenClear" /> Remove saved token</label></div>
                                 <div style="display:flex;gap:10px;align-items:center;"><button type="button" class="ws-btn" id="testNtfyBtn">Send test</button><span id="ntfyTestStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                             </div>
                         </section>
 
                         <!-- LOGS -->
                         <section class="ws-view" data-sec="logs">
-                            <div class="ws-head"><div><h1>Logs</h1><p>Recent plugin log lines. Safe to read — no passwords, cookies, or tokens are ever logged.</p></div>
+                            <div class="ws-head"><div><h1>Logs</h1><p>Recent plugin log lines. Passwords, cookies and tokens are never logged, and email addresses are masked.</p></div>
                                 <div style="display:flex;gap:8px;"><button type="button" class="ws-btn" id="logsRefreshBtn">Refresh</button></div></div>
                             <div class="ws-panel"><pre class="ws-logs" id="logsOutput">Loading…</pre></div>
                         </section>
@@ -143,14 +146,14 @@
                 </div>
 
                 <!-- ACCOUNT EDIT MODAL -->
-                <div class="ws-modal-ov" id="acctModal"><div class="ws-modal">
+                <dialog class="ws-modal-ov" id="acctModal" aria-labelledby="acctModalTitle"><div class="ws-modal">
                     <button type="button" class="ws-modal-x" aria-label="Close">&times;</button>
                     <h3 id="acctModalTitle">Link a diary</h3>
-                    <div class="ws-row"><label class="ws-field">Service</label>
-                        <select class="ws-input" id="mSvc"><option value="serializd">Serializd — TV</option><option value="letterboxd">Letterboxd — Film</option></select></div>
-                    <div class="ws-row"><label class="ws-field">Jellyfin user</label><select class="ws-input" id="mUser"></select></div>
-                    <div class="ws-row"><label class="ws-field" id="mUserLabel">Email or username</label><input type="text" class="ws-input" id="mUsername" /></div>
-                    <div class="ws-row"><label class="ws-field">Password</label><input type="password" class="ws-input" id="mPassword" /></div>
+                    <div class="ws-row"><label class="ws-field" for="mSvc">Service</label>
+                        <select class="ws-input" id="mSvc"><option value="serializd">Serializd: TV</option><option value="letterboxd">Letterboxd: Film</option></select></div>
+                    <div class="ws-row"><label class="ws-field" for="mUser">Jellyfin user</label><select class="ws-input" id="mUser"></select></div>
+                    <div class="ws-row"><label class="ws-field" id="mUserLabel" for="mUsername">Email or username</label><input type="text" class="ws-input" id="mUsername" autocomplete="off" /></div>
+                    <div class="ws-row"><label class="ws-field" for="mPassword">Password<span class="ws-saved" id="mPasswordSaved" hidden>Saved</span></label><input type="password" class="ws-input" id="mPassword" autocomplete="new-password" /></div>
                     <!-- NOTE: these ids deliberately avoid the word "cookie". Privacy and
                          anti-annoyance filter lists (Ghostery, uBlock annoyance lists, AdGuard,
                          Brave shields) carry generic cosmetic rules like [id*="cookie" i] to kill
@@ -160,74 +163,114 @@
                          2FA-blocked users at, and they have no way to tell it is their extension.
                          Reported in issue #112. Keep the visible label as "Raw cookies"; only the
                          attributes need to stay boring. -->
-                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span></label><input type="text" class="ws-input" id="mAuthBlob" placeholder="Paste from a signed-in browser (incl. cf_clearance)" /><label class="ws-muted" id="mAuthBlobClearRow" style="display:none;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="mAuthBlobClear" /> Clear the saved cookies</label></div>
-                    <div class="ws-row" id="mUserAgentRow" style="display:none;"><label class="ws-field">User-Agent <span class="ws-muted" style="text-transform:none;">(optional, match the browser you copied cookies from)</span></label><input type="text" class="ws-input" id="mUserAgent" placeholder="Mozilla/5.0 …" /></div>
+                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field" for="mAuthBlob">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span><span class="ws-saved" id="mAuthBlobSaved" hidden>Saved</span></label><input type="text" class="ws-input" id="mAuthBlob" autocomplete="off" placeholder="Paste from a signed-in browser (incl. cf_clearance)" /><label class="ws-muted" id="mAuthBlobClearRow" style="display:none;gap:7px;align-items:center;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="mAuthBlobClear" /> Remove saved cookies</label></div>
+                    <div class="ws-row" id="mUserAgentRow" style="display:none;"><label class="ws-field" for="mUserAgent">User-Agent <span class="ws-muted" style="text-transform:none;">(optional, match the browser you copied cookies from)</span></label><input type="text" class="ws-input" id="mUserAgent" placeholder="Mozilla/5.0 …" /></div>
                     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;"><button type="button" class="ws-btn" id="mVerifyBtn">Verify login</button><span id="mVerifyStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                     <div class="ws-checks" id="mChecks"></div>
-                    <div class="ws-row" id="mWatchNameRow" style="margin-top:12px;"><label class="ws-field">Watchlist name <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mWatchName" placeholder="" /></div>
-                    <div class="ws-row" id="mLibRow" style="display:none;margin-top:12px;"><label class="ws-field">Excluded libraries <span class="ws-muted" style="text-transform:none;">(never synced to this account; applies to future syncs)</span></label><div class="ws-checks" id="mLibs"></div></div>
+                    <div class="ws-row" id="mWatchNameRow" style="margin-top:12px;"><label class="ws-field" for="mWatchName">Watchlist name <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mWatchName" placeholder="" /></div>
+                    <div class="ws-row" id="mLibRow" style="display:none;margin-top:12px;"><span class="ws-field" id="mLibsLabel">Excluded libraries <span class="ws-muted" style="text-transform:none;">(never synced to this account; applies to future syncs)</span></span><div class="ws-checks" id="mLibs" role="group" aria-labelledby="mLibsLabel"></div></div>
                     <div style="display:flex;gap:10px;margin-top:18px;align-items:center;">
                         <button type="button" class="ws-btn primary" id="mSaveBtn">Save</button>
                         <button type="button" class="ws-btn" id="mCancelBtn">Cancel</button>
                         <button type="button" class="ws-btn danger" id="mDeleteBtn" style="margin-left:auto;display:none;">Remove</button>
                     </div>
+                    <div id="mConfirmRow" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid var(--ws-crit);border-radius:8px;font-size:12.5px;align-items:center;gap:10px;flex-wrap:wrap;"><span>Remove this account? Jellyscribe stops syncing to it. Nothing on the diary itself is deleted.</span><span style="margin-left:auto;display:flex;gap:8px;"><button type="button" class="ws-btn danger" id="mConfirmRemoveBtn">Yes, remove</button><button type="button" class="ws-btn" id="mConfirmKeepBtn">Keep it</button></span></div>
                     <div id="mStatus" style="font-size:12.5px;margin-top:8px;"></div>
-                </div></div>
+                </div></dialog>
 
                 <!-- REVIEW MODAL -->
-                <div class="ws-modal-ov" id="reviewModal"><div class="ws-modal">
+                <dialog class="ws-modal-ov" id="reviewModal" aria-labelledby="reviewTitle"><div class="ws-modal">
                     <button type="button" class="ws-modal-x" aria-label="Close">&times;</button>
                     <h3 id="reviewTitle">Write review</h3>
-                    <textarea id="reviewText" rows="4" class="ws-input" placeholder="Write your review…"></textarea>
-                    <div class="ws-row" style="margin-top:12px;"><label class="ws-field">Rating</label><div id="starRating">
+                    <textarea id="reviewText" aria-label="Review" rows="4" class="ws-input" placeholder="Write your review…"></textarea>
+                    <div class="ws-row" style="margin-top:12px;"><span class="ws-field" id="ratingField">Rating</span><div id="starRating" role="slider" tabindex="0" aria-labelledby="ratingField" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-valuetext="No rating">
                         <span class="ws-star" data-val="1">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="2">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="3">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="4">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="5">&#9734;<span class="ws-star-on">&#9733;</span></span>
                         <span id="ratingLabel" class="ws-muted" style="margin-left:8px;font-size:12px;">No rating</span></div>
                         <input type="hidden" id="reviewRating" value="" /></div>
                     <label class="ws-muted" style="display:block;margin:8px 0;font-size:12.5px;"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label>
                     <label class="ws-muted" id="reviewRewatchRow" style="display:block;margin:8px 0;font-size:12.5px;"><input type="checkbox" id="reviewRewatch" /> This is a rewatch</label>
                     <div id="rewatchDateRow" style="display:none;margin:8px 0;">
-                        <label class="ws-field" style="display:block;margin-bottom:4px;">Date watched</label>
+                        <label class="ws-field" for="reviewDate" style="display:block;margin-bottom:4px;">Date watched</label>
                         <input type="date" id="reviewDate" class="ws-input" style="max-width:200px;" />
                     </div>
                     <div id="reviewAccountRow" style="display:none;margin:8px 0;">
-                        <label class="ws-field" style="display:block;margin-bottom:4px;">Post as</label>
+                        <label class="ws-field" for="reviewAccount" style="display:block;margin-bottom:4px;">Post as</label>
                         <select id="reviewAccount" class="ws-input" style="max-width:280px;">
                             <option value="">All my Letterboxd accounts</option>
                         </select>
                         <span class="ws-muted" style="font-size:11.5px;display:block;margin-top:4px;">Defaults to posting on every linked Letterboxd account. Pick one to limit to that account only.</span>
                     </div>
                     <div style="display:flex;gap:10px;margin-top:8px;align-items:center;"><button type="button" class="ws-btn primary" id="reviewSubmit">Post review</button><button type="button" class="ws-btn" id="reviewCancel">Cancel</button><span id="reviewStatus" style="font-size:12.5px;"></span></div>
-                </div></div>
+                </div></dialog>
 
                 <script type="text/javascript">
                 (function () {
+                    // This page's own root: the script sits inside it.
+                    var me = document.currentScript;
+                    var root = (me && me.closest('#letterboxdSyncConfigPage')) || document.getElementById('letterboxdSyncConfigPage');
+                    function byId(id) { return root.querySelector('#' + id); }
                     var WS = {
-                        rootId: 'letterboxdSyncConfigPage',
-                        noActivityText: 'No activity yet. Run a sync to get started.',
-                        getJson: function (path) { return ApiClient.getJSON(ApiClient.getUrl(path)); },
-                        postJson: function (path, body) { return ApiClient.ajax({ url: ApiClient.getUrl(path), type: 'POST', contentType: 'application/json', data: JSON.stringify(body) }); },
                         PluginId: 'c7a3e1b9-5d42-4f8a-9c06-2b7d8e4f1a35',
                         ovFilter: 'all',
-                        merged: [],
+                        merged: [], seen: {},
                         users: [],
                         config: null,
                         pageSize: 25,
                         actOffset: 0, actTotal: 0,
                         editing: null,
                         libraries: null,
+                        noActivityText: 'No activity yet. Run a sync to get started.', overviewWhat: 'activity',
+                        retryable: ['loadConfig', 'loadOverview', 'loadActivity'],
+                        historyBodies: ['historyBody', 'actBody'],
+                        getJson: function (path) { return ApiClient.getJSON(ApiClient.getUrl(path)); },
+                        // Any HTTP reply resolves (ApiClient.ajax rejects one that is not 2xx); only a server
+                        // that could not be reached rejects.
+                        post: function (path, body) {
+                            var like = function (r, ok) { return { ok: ok, status: (r && r.status) || (ok ? 200 : 0), json: function () { return r && r.json ? r.json() : Promise.reject(new Error('no body')); } }; };
+                            return ApiClient.ajax({ url: ApiClient.getUrl(path), type: 'POST', contentType: 'application/json', data: JSON.stringify(body) })
+                                .then(function (r) { return like(r, true); }, function (r) { if (r && r.status) return like(r, false); throw r; });
+                        },
 
                         init: function () {
                             var self = this;
                             self.ensureViewport();
-                            self.wireNav();
-                            self.wireButtons();
+                            self.followTheme();
+                            self.wireCommon();
+                            self.wireAdmin();
                             self.loadOverview();
                             self.loadConfig();
                         },
+                        onSection: function (sec) {
+                            if (sec === 'activity') this.loadActivity(true);
+                            if (sec === 'logs') this.loadLogs();
+                        },
+                        // The admin page's own controls; wireCommon (jellyscribe.js) wires the ones both pages have.
+                        wireAdmin: function () {
+                            var self = this;
+                            byId('actFilters').addEventListener('click', function (e) {
+                                var c = e.target.closest('.ws-chip'); if (!c) return;
+                                this.querySelectorAll('.ws-chip').forEach(function (x) { x.classList.remove('on'); }); c.classList.add('on');
+                                self.actSource = c.getAttribute('data-f'); self.loadActivity(true);
+                            });
+                            byId('actPrev').addEventListener('click', function () { if (self.actOffset > 0) { self.actOffset -= self.pageSize; self.loadActivity(false); } });
+                            byId('actNext').addEventListener('click', function () { if (self.actOffset + self.pageSize < self.actTotal) { self.actOffset += self.pageSize; self.loadActivity(false); } });
+                            byId('saveIntegrationsBtn').addEventListener('click', function () { self.saveIntegrations(); });
+                            byId('testJellyseerrBtn').addEventListener('click', function () { self.testJellyseerr(); });
+                            byId('testNtfyBtn').addEventListener('click', function () { self.testNtfy(); });
+                            byId('logsRefreshBtn').addEventListener('click', function () { self.loadLogs(); });
+                            byId('acctGroups').addEventListener('click', function (e) {
+                                var add = e.target.closest('[data-add-for]');
+                                if (add) { self.openAccount(null, add.getAttribute('data-add-for')); return; }
+                                var edit = e.target.closest('[data-edit-svc]');
+                                if (edit) self.openAccount({ svc: edit.getAttribute('data-edit-svc'), user: edit.getAttribute('data-edit-user'), id: edit.getAttribute('data-edit-id') });
+                            });
+                        },
                         loadConfig: function () {
                             var self = this;
-                            ApiClient.getUsers().then(function (u) { self.users = u; return self.refreshConfig(true); })
-                                .then(function () {
+                            ApiClient.getUsers().then(function (u) { self.users = u; return ApiClient.getPluginConfiguration(self.PluginId); })
+                                .then(function (c) {
+                                    self.config = c;
+                                    self.renderAccounts();
                                     // Paused badges for accounts whose auth breaker is open. Fail-soft:
                                     // if the fetch errors, cards simply render without the badge.
                                     ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/AuthBreakers')).then(function (d) {
@@ -243,101 +286,59 @@
                                     ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Libraries')).then(function (d) {
                                         self.libraries = (d && d.libraries) || [];
                                     }).catch(function () { });
+                                    byId('jellyseerrUrl').value = c.JellyseerrUrl || '';
+                                    self.fillSecret('jellyseerrApiKey', !!c.HasJellyseerrApiKey, 'Leave blank to keep the saved key', 'Settings → General → API Key');
+                                    // Default on: older configs predate the field, and the option exists
+                                    // because pending requests never reach Radarr/Sonarr.
+                                    byId('autoApproveJellyseerr').checked = c.AutoApproveJellyseerrRequests !== false;
+                                    byId('ntfyUrl').value = c.NtfyUrl || '';
+                                    self.fillSecret('ntfyToken', !!c.HasNtfyToken, 'Leave blank to keep the saved token', 'tk_…');
                                 }).catch(function () {
-                                    document.getElementById('acctGroups').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('accounts', 'loadConfig') + '</div>';
+                                    byId('acctGroups').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('accounts', 'loadConfig') + '</div>';
                                 });
                         },
-                        // Re-read after every save: the sent object holds what was typed, while the
-                        // server only ever returns whether a secret is saved (HasPassword and friends).
-                        refreshConfig: function (fillIntegrations) {
-                            var self = this;
-                            return ApiClient.getPluginConfiguration(self.PluginId).then(function (c) {
-                                self.config = c;
-                                self.renderAccounts();
-                                if (fillIntegrations) self.fillIntegrations();
-                            });
+                        // The same stored account: same Jellyfin owner and the same login, ignoring case.
+                        sameAccount: function (svc, a, b) {
+                            var login = svc === 'serializd' ? 'Email' : 'LetterboxdUsername';
+                            var owner = function (x) { return String(x.UserJellyfinId || '').replace(/-/g, '').toLowerCase(); };
+                            return !!a && !!b && owner(a) === owner(b) && String(a[login] || '').toLowerCase() === String(b[login] || '').toLowerCase();
                         },
-                        fillIntegrations: function () {
-                            var c = this.config;
-                            document.getElementById('jellyseerrUrl').value = c.JellyseerrUrl || '';
-                            this.fillSecret('jellyseerrApiKey', !!c.HasJellyseerrApiKey);
-                            // Default on: older configs predate the field, and the option exists
-                            // because pending requests never reach Radarr/Sonarr.
-                            document.getElementById('autoApproveJellyseerr').checked = c.AutoApproveJellyseerrRequests !== false;
-                            document.getElementById('ntfyUrl').value = c.NtfyUrl || '';
-                            this.fillSecret('ntfyToken', !!c.HasNtfyToken);
-                            document.getElementById('ntfyTokenClear').checked = false;
-                            document.getElementById('ntfyTokenClearRow').style.display = c.HasNtfyToken ? 'block' : 'none';
+                        // Puts item in place of orig (or of an account with item's owner and login) in a copy of
+                        // list, keeping its position; appends it when neither is there.
+                        withAccount: function (svc, list, orig, item) {
+                            var self = this, next = (list || []).slice(), at = -1;
+                            if (orig) next.some(function (x, k) { if (self.sameAccount(svc, x, orig)) { at = k; return true; } return false; });
+                            if (at < 0) next.some(function (x, k) { if (self.sameAccount(svc, x, item)) { at = k; return true; } return false; });
+                            if (at >= 0) next[at] = item; else next.push(item);
+                            return next;
+                        },
+
+                        /* Re-reads the stored config right before saving and applies only edit(copy) to it, so
+                           whatever changed since this page loaded (users adding or editing their own accounts,
+                           another admin) is kept instead of being overwritten by the page's old copy. Then reloads
+                           it from the server, so the page never keeps a typed secret and every Saved indicator
+                           reflects what was stored. A failed save leaves this.config untouched, so the open form
+                           can be retried. */
+                        saveConfig: function (edit) {
+                            var self = this;
+                            return ApiClient.getPluginConfiguration(self.PluginId).then(function (fresh) {
+                                var next = Object.assign({}, fresh);
+                                edit(next);
+                                return ApiClient.updatePluginConfiguration(self.PluginId, next);
+                            }).then(function () {
+                                return ApiClient.getPluginConfiguration(self.PluginId).then(function (c) {
+                                    self.config = c;
+                                    self.fillSecret('jellyseerrApiKey', !!c.HasJellyseerrApiKey, 'Leave blank to keep the saved key', 'Settings → General → API Key');
+                                    self.fillSecret('ntfyToken', !!c.HasNtfyToken, 'Leave blank to keep the saved token', 'tk_…');
+                                    self.renderAccounts();
+                                }, function () { });
+                            });
                         },
                         userName: function (idHex) {
                             var u = this.users.filter(function (x) { return (x.Id || '').replace(/-/g, '') === idHex; })[0];
                             return u ? u.Name : idHex;
                         },
 
-                        wireNav: function () {
-                            var self = this, nav = document.getElementById('wsNav');
-                            nav.addEventListener('click', function (e) {
-                                var a = e.target.closest('a[data-sec]'); if (!a) return;
-                                nav.querySelectorAll('a').forEach(function (x) { x.classList.remove('active'); });
-                                a.classList.add('active');
-                                var sec = a.getAttribute('data-sec');
-                                document.querySelectorAll('.ws-view').forEach(function (v) { v.classList.toggle('show', v.getAttribute('data-sec') === sec); });
-                                if (sec === 'activity') self.loadActivity(true);
-                                if (sec === 'logs') self.loadLogs();
-                            });
-                            document.getElementById('actFilters').addEventListener('click', function (e) {
-                                var c = e.target.closest('.ws-chip'); if (!c) return;
-                                this.querySelectorAll('.ws-chip').forEach(function (x) { x.classList.remove('on'); }); c.classList.add('on');
-                                self.actSource = c.getAttribute('data-f'); self.loadActivity(true);
-                            });
-                        },
-
-                        wireButtons: function () {
-                            var self = this;
-                            self.wireCommon(['historyBody', 'actBody']);
-                            document.getElementById('actPrev').addEventListener('click', function () { if (self.actOffset > 0) { self.actOffset -= self.pageSize; self.loadActivity(false); } });
-                            document.getElementById('actNext').addEventListener('click', function () { if (self.actOffset + self.pageSize < self.actTotal) { self.actOffset += self.pageSize; self.loadActivity(false); } });
-                            document.getElementById('saveIntegrationsBtn').addEventListener('click', function () { self.saveIntegrations(); });
-                            document.getElementById('testJellyseerrBtn').addEventListener('click', function () { self.testJellyseerr(); });
-                            document.getElementById('testNtfyBtn').addEventListener('click', function () { self.testNtfy(); });
-                            document.getElementById('logsRefreshBtn').addEventListener('click', function () { self.loadLogs(); });
-                            document.getElementById('acctGroups').addEventListener('click', function (e) {
-                                var add = e.target.closest('[data-add-for]');
-                                if (add) { self.openAccount(null, add.getAttribute('data-add-for')); return; }
-                                var edit = e.target.closest('[data-edit-svc]');
-                                if (edit) self.openAccount({ svc: edit.getAttribute('data-edit-svc'), user: edit.getAttribute('data-edit-user'), id: edit.getAttribute('data-edit-id') });
-                            });
-                        },
-
-                        /* ===== Dashboard (both diaries at once) ===== */
-                        loadOverview: function () {
-                            var self = this, U = ApiClient.getUrl.bind(ApiClient);
-                            var LB = 'Jellyfin.Plugin.LetterboxdSync', SZ = 'Jellyfin.Plugin.LetterboxdSync/Serializd';
-                            Promise.all([
-                                ApiClient.getJSON(U(LB + '/Stats')),
-                                ApiClient.getJSON(U(SZ + '/Stats')),
-                                ApiClient.getJSON(U(LB + '/History', { count: 250, offset: 0 })),
-                                ApiClient.getJSON(U(SZ + '/History', { count: 250, offset: 0 }))
-                            ]).then(function (res) {
-                                var fs = res[0], ts = res[1];
-                                document.getElementById('statFilm').textContent = fs.total;
-                                document.getElementById('statTv').textContent = ts.total;
-                                var fw = fs.watchlist, tw = ts.watchlist;
-                                document.getElementById('statWatchlist').textContent = (fw == null && tw == null) ? '—' : ((fw || 0) + (tw || 0));
-                                document.getElementById('statWatchlistSub').textContent = (fw == null && tw == null) ? 'run a watchlist sync' : ((tw || 0) + ' shows · ' + (fw || 0) + ' films');
-                                document.getElementById('statSynced').textContent = (fs.success + ts.success);
-                                document.getElementById('statRewatches').textContent = (fs.rewatches + ts.rewatches);
-                                document.getElementById('statFailed').textContent = (fs.failed + ts.failed);
-                                var fe = ((res[2] && res[2].events) || []).map(function (e) { e._svc = 'letterboxd'; return e; });
-                                var te = ((res[3] && res[3].events) || []).map(function (e) { e._svc = 'serializd'; return e; });
-                                self.merged = fe.concat(te).sort(function (a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); });
-                                self.renderOverview();
-                                self.renderSparks();
-                            }).catch(function () {
-                                document.getElementById('historyBody').innerHTML = self.errorRow('activity', 'loadOverview');
-                                document.getElementById('historyPagination').style.display = 'none';
-                            });
-                        },
                         loadActivity: function (reset) {
                             var self = this; var src = self.actSource || 'letterboxd'; if (reset) self.actOffset = 0;
                             var b = src === 'serializd' ? 'Jellyfin.Plugin.LetterboxdSync/Serializd' : 'Jellyfin.Plugin.LetterboxdSync';
@@ -345,50 +346,63 @@
                                 .then(function (r) {
                                     var events = ((r && r.events) || []).map(function (e) { e._svc = src; return e; });
                                     self.actTotal = (r && r.total) || events.length;
-                                    document.getElementById('actBody').innerHTML = events.length ? self.unitsHtml(self.groupRuns(events)) : self.emptyRow(self.noActivityText);
-                                    var pg = document.getElementById('actPagination');
+                                    byId('actBody').innerHTML = events.length ? self.unitsHtml(self.groupRuns(events)) : self.emptyRow(self.noActivityText);
+                                    var pg = byId('actPagination');
                                     pg.style.display = self.actTotal > self.pageSize ? 'flex' : 'none';
-                                    document.getElementById('actPrev').disabled = self.actOffset === 0;
-                                    document.getElementById('actNext').disabled = self.actOffset + self.pageSize >= self.actTotal;
-                                    document.getElementById('actPageInfo').textContent = (self.actOffset + 1) + '–' + Math.min(self.actOffset + self.pageSize, self.actTotal) + ' of ' + self.actTotal;
+                                    byId('actPrev').disabled = self.actOffset === 0;
+                                    byId('actNext').disabled = self.actOffset + self.pageSize >= self.actTotal;
+                                    byId('actPageInfo').textContent = (self.actOffset + 1) + '–' + Math.min(self.actOffset + self.pageSize, self.actTotal) + ' of ' + self.actTotal;
                                 }).catch(function () {
-                                    document.getElementById('actBody').innerHTML = self.errorRow('the activity log', 'loadActivity');
-                                    document.getElementById('actPagination').style.display = 'none';
+                                    byId('actBody').innerHTML = self.errorRow('the activity log', 'loadActivity');
+                                    byId('actPagination').style.display = 'none';
                                 });
                         },
                         /* ===== Sync (honours the All / Film / TV filter) ===== */
-                        setStatus: function (html) { document.getElementById('syncStatus').innerHTML = html; },
-                        runLetterboxdTask: function (key) {
-                            var self = this;
+                        setStatus: function (html) { byId('syncStatus').innerHTML = html; },
+                        // Starts one of the plugin's scheduled tasks, which run for every user.
+                        runTask: function (key) {
                             return ApiClient.getJSON(ApiClient.getUrl('ScheduledTasks')).then(function (tasks) {
-                                var task = tasks.filter(function (t) { return t.Key === key; })[0];
-                                if (task) return ApiClient.ajax({ url: ApiClient.getUrl('ScheduledTasks/Running/' + task.Id), type: 'POST' });
+                                var task = (tasks || []).filter(function (t) { return t.Key === key; })[0];
+                                if (!task) throw new Error('its scheduled task was not found');
+                                return ApiClient.ajax({ url: ApiClient.getUrl('ScheduledTasks/Running/' + task.Id), type: 'POST' });
                             });
                         },
+                        // Starts each task, shows why any did not start, and watches progress only when one did.
+                        startJobs: function (label, jobs) {
+                            var self = this;
+                            self.setStatus('<span class="ws-muted">Starting…</span>');
+                            self.setSyncBusy(true);
+                            Promise.all(jobs.map(function (j) {
+                                var name = jobs.length > 1 ? j.name + ': ' : '';
+                                return self.runTask(j.key).then(function () { return { ok: true }; }, function (err) {
+                                    return Promise.resolve(self.errText(err)).then(function (msg) { return { ok: false, msg: name + msg }; });
+                                });
+                            })).then(function (res) {
+                                var errors = res.filter(function (x) { return !x.ok; }).map(function (x) { return x.msg; });
+                                self.setStatus(errors.length ? '<span class="ws-red">Not started. ' + self.escAttr(errors.join(' · ')) + '</span>' : '');
+                                if (res.some(function (x) { return x.ok; })) self.startWatcher(label); else self.setSyncBusy(false);
+                            });
+                        },
+                        // Both run the scheduled tasks, so they sync every user, film and TV alike.
                         runSync: function () {
-                            var self = this, f = self.ovFilter; self.setStatus('');
-                            self.startWatcher('Sync');
-                            var jobs = [];
-                            if (f === 'all' || f === 'serializd') jobs.push(ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Serializd/SyncNow'), type: 'POST' }).catch(function () {}));
-                            if (f === 'all' || f === 'letterboxd') jobs.push(self.runLetterboxdTask('LetterboxdSync'));
-                            Promise.all(jobs);
+                            var f = this.ovFilter, jobs = [];
+                            if (f === 'all' || f === 'serializd') jobs.push({ name: 'Serializd', key: 'SerializdSync' });
+                            if (f === 'all' || f === 'letterboxd') jobs.push({ name: 'Letterboxd', key: 'LetterboxdSync' });
+                            this.startJobs('Sync', jobs);
                         },
                         runWatchlist: function () {
-                            var self = this, f = self.ovFilter; self.setStatus('');
-                            self.startWatcher('Watchlist sync');
-                            var jobs = [];
-                            if (f === 'all' || f === 'serializd') jobs.push(ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Serializd/SyncWatchlistNow'), type: 'POST' }).catch(function () {}));
-                            if (f === 'all' || f === 'letterboxd') jobs.push(self.runLetterboxdTask('LetterboxdWatchlistSync'));
-                            Promise.all(jobs);
+                            var f = this.ovFilter, jobs = [];
+                            if (f === 'all' || f === 'serializd') jobs.push({ name: 'Serializd', key: 'SerializdWatchlistSync' });
+                            if (f === 'all' || f === 'letterboxd') jobs.push({ name: 'Letterboxd', key: 'LetterboxdWatchlistSync' });
+                            this.startJobs('Watchlist sync', jobs);
                         },
-                        getProgress: function () { return ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Progress')).catch(function () { return null; }); },
                         renderAccounts: function () {
                             var self = this, c = self.config;
                             var byUser = {};
                             (c.Accounts || []).forEach(function (a) { (byUser[a.UserJellyfinId] = byUser[a.UserJellyfinId] || []).push({ svc: 'letterboxd', a: a }); });
                             (c.SerializdAccounts || []).forEach(function (a) { (byUser[a.UserJellyfinId] = byUser[a.UserJellyfinId] || []).push({ svc: 'serializd', a: a }); });
                             var count = (c.Accounts || []).length + (c.SerializdAccounts || []).length;
-                            document.getElementById('acctCount').textContent = count || '';
+                            byId('acctCount').textContent = count || '';
                             var ids = Object.keys(byUser);
                             // ensure every jellyfin user appears so admins can add for anyone
                             self.users.forEach(function (u) { var h = (u.Id || '').replace(/-/g, ''); if (!byUser[h]) byUser[h] = []; });
@@ -398,7 +412,7 @@
                                 var name = String(self.userName(uid) || '');
                                 return '<div class="ws-ugroup"><div class="ws-uhead"><span class="ws-avatar">' + self.escAttr((name[0] || '?').toUpperCase()) + '</span><b>' + self.escAttr(name) + '</b><span class="ws-label">' + byUser[uid].length + ' linked</span></div><div class="ws-cardgrid">' + cards + '</div></div>';
                             }).join('');
-                            document.getElementById('acctGroups').innerHTML = html;
+                            byId('acctGroups').innerHTML = html;
                         },
                         acctCard: function (svc, a) {
                             var self = this;
@@ -408,7 +422,7 @@
                             var feats;
                             if (svc === 'serializd') feats = [['Favourites', a.SyncFavorites], ['Watchlist', a.SyncWatchlist], ['Seerr', a.AutoRequestWatchlist], ['Import', a.EnableDiaryImport], ['Date filter', a.EnableDateFilter]];
                             else feats = [['Favourites', a.SyncFavorites], ['Watchlist', a.EnableWatchlistSync], ['Seerr', a.AutoRequestWatchlist], ['Import', a.EnableDiaryImport], ['Cookies', !!a.HasRawCookies]];
-                            var chips = feats.map(function (f) { return self.featChip(f[0], f[1]); }).join('');
+                            var chips = feats.map(function (f) { return self.feat(f[0], f[1]); }).join('');
                             return '<div class="ws-acct ' + (svc === 'serializd' ? 'tv' : 'film') + '">' +
                                 '<div class="top"><span class="ws-badge ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'TV' : 'MV') + '</span>' +
                                 '<div style="min-width:0;"><div class="u" title="' + self.escAttr(uname) + '">' + self.escAttr(uname) + '</div><div class="svc ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'Serializd · TV' : 'Letterboxd · Film') + '</div></div>' +
@@ -431,9 +445,8 @@
                                 ['Primary account', 'chkPrimary', !!a.IsPrimary, 'Wins on tie-breaks when a user has several.'],
                                 ['Only sync recently played', 'chkDate', !!a.EnableDateFilter, 'Limit the catch-up to the last N days.']
                             ];
-                            // Seerr rows stay rendered when Seerr isn't configured, hidden, so saving keeps their values.
                             var watch = [
-                                ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.SyncWatchlist : !!a.EnableWatchlistSync, svc === 'serializd' ? 'Watchlist → Jellyfin collection + playlist.' : 'Watchlist → Jellyfin playlist.'],
+                                ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.SyncWatchlist : !!a.EnableWatchlistSync, this.watchDesc(svc)],
                                 ['Auto-request via Seerr', 'chkSeerr', !!a.AutoRequestWatchlist, 'Watchlisted but missing from the library → request via Seerr.', noSeerr],
                                 ['Mirror watchlist to Seerr', 'chkMirror', !!a.MirrorJellyseerrWatchlist, 'Push this watchlist into the Seerr user\'s own watchlist (primary account only).', noSeerr]
                             ];
@@ -442,15 +455,12 @@
                                 ['Stop on first failure', 'chkStop', !!a.StopOnFailure, 'Halt this account on the first error.'],
                                 ['Backfill Seerr requests', 'chkBackfill', !!a.BackfillAvailableRequests, 'Also attribute a Seerr request for already-available titles (requester trail).', noSeerr]
                             ];
-                            var html = function (rows) {
-                                return rows.map(function (r) {
-                                    return '<label' + (r[4] ? ' style="display:none;"' : '') + '><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>';
-                                }).join('');
-                            };
-                            return '<div class="ws-label">Sync</div>' + html(sync) +
-                                '<div class="ws-row" id="dateDaysRow" style="display:' + (a.EnableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.DateFilterDays || 7) + '" /></div>' +
-                                '<div class="ws-label">' + (noSeerr ? 'Watchlist' : 'Watchlist &amp; Seerr') + '</div>' + html(watch) +
-                                '<details class="ws-adv"><summary class="ws-label">Advanced</summary><div class="ws-checks">' + html(advanced) + '</div></details>';
+                            return this.checksHtml({ sync: sync, watch: watch, advanced: advanced, watchLabel: noSeerr ? 'Watchlist' : null }, a.EnableDateFilter, a.DateFilterDays);
+                        },
+                        libsFor: function (a) { return this.libsHtml((a && a.ExcludedLibraryIds) || []); },
+                        // The one toggle whose wording depends on the service; onSvcChange keeps it in step.
+                        watchDesc: function (svc) {
+                            return svc === 'serializd' ? 'Watchlist → Jellyfin collection + playlist. The collection is visible to everyone who can see those shows.' : 'Watchlist → Jellyfin playlist.';
                         },
                         openAccount: function (ref, presetUser) {
                             var self = this, svc, a = null, userId = presetUser;
@@ -461,99 +471,101 @@
                                 a = list.filter(function (x) { return x.UserJellyfinId === userId && (svc === 'serializd' ? x.Email === name : x.LetterboxdUsername === name); })[0] || null;
                             }
                             self.editing = { svc: svc || 'serializd', userId: userId, original: a };
-                            document.getElementById('acctModalTitle').textContent = a ? 'Edit account' : 'Link a diary';
-                            document.getElementById('mSvc').value = svc || 'serializd';
-                            document.getElementById('mSvc').disabled = !!a;
-                            var usel = document.getElementById('mUser');
+                            byId('acctModalTitle').textContent = a ? 'Edit account' : 'Link a diary';
+                            byId('mSvc').value = svc || 'serializd';
+                            byId('mSvc').disabled = !!a;
+                            var usel = byId('mUser');
                             usel.innerHTML = self.users.map(function (u) { var h = (u.Id || '').replace(/-/g, ''); return '<option value="' + self.escAttr(h) + '"' + (h === userId ? ' selected' : '') + '>' + self.escAttr(u.Name) + '</option>'; }).join('');
-                            document.getElementById('mUsername').value = a ? (svc === 'serializd' ? a.Email : a.LetterboxdUsername) : '';
-                            self.fillSecret('mPassword', !!(a && a.HasPassword));
-                            self.fillSecret('mAuthBlob', !!(a && a.HasRawCookies));
-                            document.getElementById('mAuthBlobClear').checked = false;
-                            document.getElementById('mAuthBlobClearRow').style.display = a && a.HasRawCookies ? 'block' : 'none';
-                            document.getElementById('mUserAgent').value = (a && a.UserAgent) || '';
-                            document.getElementById('mWatchName').value = (a && (svc === 'serializd' ? a.WatchlistName : a.PlaylistName)) || '';
-                            document.getElementById('mVerifyStatus').textContent = ''; document.getElementById('mStatus').textContent = '';
-                            document.getElementById('mDeleteBtn').style.display = a ? '' : 'none';
-                            document.getElementById('mChecks').innerHTML = self.checksFor(svc || 'serializd', a);
-                            document.getElementById('mLibs').innerHTML = self.libsFor((a && a.ExcludedLibraryIds) || []);
-                            document.getElementById('mLibRow').style.display = (self.libraries || []).length ? 'block' : 'none';
-                            document.getElementById('chkDate').addEventListener('change', function () { document.getElementById('dateDaysRow').style.display = this.checked ? 'block' : 'none'; });
+                            byId('mUsername').value = a ? (svc === 'serializd' ? a.Email : a.LetterboxdUsername) : '';
+                            self.fillSecret('mPassword', !!(a && a.HasPassword), 'Leave blank to keep the saved password', '');
+                            self.fillSecret('mAuthBlob', !!(a && a.HasRawCookies), 'Leave blank to keep the saved cookies', 'Paste from a signed-in browser (incl. cf_clearance)');
+                            byId('mUserAgent').value = (a && a.UserAgent) || '';
+                            byId('mWatchName').value = (a && (svc === 'serializd' ? a.WatchlistName : a.PlaylistName)) || '';
+                            byId('mVerifyStatus').textContent = ''; byId('mStatus').textContent = '';
+                            byId('mDeleteBtn').style.display = a ? '' : 'none';
+                            byId('mConfirmRow').style.display = 'none';
+                            self.setModalBusy(false);
+                            byId('mChecks').innerHTML = self.checksFor(svc || 'serializd', a);
+                            byId('mLibs').innerHTML = self.libsFor(a);
+                            byId('mLibRow').style.display = (self.libraries || []).length ? 'block' : 'none';
+                            byId('chkDate').addEventListener('change', function () { byId('dateDaysRow').style.display = this.checked ? 'block' : 'none'; });
                             self.onSvcChange();
-                            document.getElementById('acctModal').classList.add('show');
+                            self.openModal('acctModal');
                         },
                         saveAccount: function () {
                             var self = this, m = self.collectModal();
-                            if (!m.username) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Username/email is required.</span>'; return; }
-                            if (m.svc === 'letterboxd' && m.username.indexOf('@') >= 0) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Letterboxd no longer accepts an email address to sign in. Use your Letterboxd username, the name in letterboxd.com/&lt;username&gt;/.</span>'; return; }
-                            var orig = self.editing.original, prevLb = self.config.Accounts, prevSz = self.config.SerializdAccounts;
-                            if (self.renamedWithoutPassword(m, orig && (m.svc === 'serializd' ? orig.Email : orig.LetterboxdUsername), !!(orig && orig.HasPassword))) { document.getElementById('mStatus').innerHTML = self.renamedMessage; return; }
+                            if (!self.validAccountForm(m)) return;
+                            var orig = self.editing.original;
                             var excludedLibs = self.mergeExcluded((orig && orig.ExcludedLibraryIds) || [], m.libs);
+                            var item;
                             if (m.svc === 'serializd') {
-                                self.config.SerializdAccounts = (self.config.SerializdAccounts || []).filter(function (x) { return x !== orig; });
-                                self.config.SerializdAccounts.push({ UserJellyfinId: m.userId, Email: m.username, Password: m.password, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, SyncWatchlist: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, WatchlistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });
+                                // Original* names the login this edit started from, so the server carries its saved
+                                // password across a changed email or a move to another Jellyfin user.
+                                item = { UserJellyfinId: m.userId, OriginalUserJellyfinId: orig ? orig.UserJellyfinId : null, OriginalEmail: orig ? orig.Email : null, Email: m.username, Password: m.password, Enabled: m.enabled, SyncFavorites: m.fav, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, SyncWatchlist: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, WatchlistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs };
                             } else {
-                                self.config.Accounts = (self.config.Accounts || []).filter(function (x) { return x !== orig; });
-                                self.config.Accounts.push({ UserJellyfinId: m.userId, LetterboxdUsername: m.username, LetterboxdPassword: m.password, RawCookies: m.cookies || null, ClearRawCookies: m.clearCookies, UserAgent: m.userAgent || null, Enabled: m.enabled, SyncFavorites: m.fav, SyncRatings: m.ratings, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, EnableWatchlistSync: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, PlaylistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs });
+                                item = { UserJellyfinId: m.userId, OriginalUserJellyfinId: orig ? orig.UserJellyfinId : null, OriginalLetterboxdUsername: orig ? orig.LetterboxdUsername : null, LetterboxdUsername: m.username, LetterboxdPassword: m.password, RawCookies: m.cookies || null, ClearRawCookies: !m.cookies && m.clearCookies, UserAgent: m.userAgent || null, Enabled: m.enabled, SyncFavorites: m.fav, SyncRatings: m.ratings, EnableDateFilter: m.date, DateFilterDays: m.days, IsPrimary: m.primary, EnableWatchlistSync: m.watch, AutoRequestWatchlist: m.seerr, BackfillAvailableRequests: m.backfill, MirrorJellyseerrWatchlist: m.mirror, PlaylistName: m.watchName || null, SkipPreviouslySynced: m.skip, StopOnFailure: m.stop, EnableDiaryImport: m.imp, ExcludedLibraryIds: excludedLibs };
                             }
-                            document.getElementById('mStatus').textContent = 'Saving…';
+                            var key = m.svc === 'serializd' ? 'SerializdAccounts' : 'Accounts';
+                            if (self.modalBusy) return;
+                            byId('mStatus').textContent = 'Saving…';
                             self.setModalBusy(true);
-                            ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {
+                            self.saveConfig(function (c) {
+                                c[key] = self.withAccount(m.svc, c[key], orig, item);
+                            }).then(function () {
                                 self.setModalBusy(false);
-                                document.getElementById('acctModal').classList.remove('show');
-                                self.refreshConfig(false).catch(function () { self.renderAccounts(); });
+                                self.closeModal('acctModal');
                                 Dashboard.processPluginConfigurationUpdateResult();
                             }, function (err) {
-                                self.config.Accounts = prevLb; self.config.SerializdAccounts = prevSz;
                                 self.setModalBusy(false);
                                 self.saveFailed(err);
                             });
                         },
                         deleteAccount: function () {
-                            var self = this, orig = self.editing.original; if (!orig) return;
-                            if (!confirm('Remove this account?')) return;
-                            var prevLb = self.config.Accounts, prevSz = self.config.SerializdAccounts;
-                            if (self.editing.svc === 'serializd') self.config.SerializdAccounts = (self.config.SerializdAccounts || []).filter(function (x) { return x !== orig; });
-                            else self.config.Accounts = (self.config.Accounts || []).filter(function (x) { return x !== orig; });
-                            document.getElementById('mStatus').textContent = 'Removing…';
+                            var self = this, orig = self.editing.original; if (!orig || self.modalBusy) return;
+                            var svc = self.editing.svc, key = svc === 'serializd' ? 'SerializdAccounts' : 'Accounts';
+                            byId('mStatus').textContent = 'Removing…';
                             self.setModalBusy(true);
-                            ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {
+                            self.saveConfig(function (c) { c[key] = (c[key] || []).filter(function (x) { return !self.sameAccount(svc, x, orig); }); }).then(function () {
                                 self.setModalBusy(false);
-                                document.getElementById('acctModal').classList.remove('show');
-                                self.refreshConfig(false).catch(function () { self.renderAccounts(); });
+                                self.closeModal('acctModal');
                             }, function (err) {
-                                self.config.Accounts = prevLb; self.config.SerializdAccounts = prevSz;
                                 self.setModalBusy(false);
-                                self.saveFailed(err);
+                                self.saveFailed(err, 'mStatus', 'Remove failed');
                             });
                         },
                         verifyAccount: function () {
-                            var self = this, svc = document.getElementById('mSvc').value, st = document.getElementById('mVerifyStatus');
-                            var orig = self.editing && self.editing.original, owner = document.getElementById('mUser').value;
-                            // An empty password field verifies the saved one, which the server looks up by owner + username.
-                            var saved = function (name) { return !!(orig && orig.HasPassword) && orig.UserJellyfinId === owner && String((svc === 'serializd' ? orig.Email : orig.LetterboxdUsername) || '').toLowerCase() === name.toLowerCase(); };
+                            var self = this, svc = byId('mSvc').value, st = byId('mVerifyStatus');
+                            // A blank password checks the saved one: the server looks it up for the account
+                            // being edited (its original owner and login), so it never comes back here.
+                            var orig = self.editing && self.editing.original, owner = orig ? orig.UserJellyfinId : byId('mUser').value;
                             if (svc === 'letterboxd') {
-                                var lbUser = document.getElementById('mUsername').value.trim(), lbPw = document.getElementById('mPassword').value;
-                                if (!lbUser || (!lbPw && !saved(lbUser))) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
+                                var lbUser = byId('mUsername').value.trim(), lbPw = byId('mPassword').value;
+                                if (!lbUser || (!lbPw && !(orig && orig.HasPassword))) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
                                 st.innerHTML = '<span class="ws-muted">Verifying… (can take a few seconds)</span>';
-                                ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ letterboxdUsername: lbUser, letterboxdPassword: lbPw, rawCookies: document.getElementById('mAuthBlob').value || null, clearRawCookies: document.getElementById('mAuthBlobClear').checked, userAgent: document.getElementById('mUserAgent').value.trim() || null, userJellyfinId: owner }) })
+                                ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ letterboxdUsername: lbUser, letterboxdPassword: lbPw || null, rawCookies: byId('mAuthBlob').value || null, clearRawCookies: byId('mAuthBlobClear').checked, userAgent: byId('mUserAgent').value.trim() || null, userJellyfinId: owner, originalLetterboxdUsername: orig ? orig.LetterboxdUsername : null }) })
                                     .then(function (r) { r.json().then(function (d) { st.innerHTML = self.verifyMessage(true, d); }); },
                                         function (r) { if (r && r.json) r.json().then(function (d) { st.innerHTML = self.verifyMessage(false, d); }, function () { st.innerHTML = self.verifyMessage(false, null); }); else st.innerHTML = self.verifyMessage(false, null); });
                                 return;
                             }
-                            var email = document.getElementById('mUsername').value.trim(), pw = document.getElementById('mPassword').value;
-                            if (!email || (!pw && !saved(email))) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
+                            var email = byId('mUsername').value.trim(), pw = byId('mPassword').value;
+                            if (!email || (!pw && !(orig && orig.HasPassword))) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
                             st.innerHTML = '<span class="ws-muted">Verifying…</span>';
-                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Serializd/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ email: email, password: pw, userJellyfinId: owner }) })
+                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Serializd/Verify'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ email: email, password: pw || null, userJellyfinId: owner, originalEmail: orig ? orig.Email : null }) })
                                 .then(function (r) { r.json().then(function (d) { st.innerHTML = '<span class="ws-green">Login OK' + (d.username ? ' (' + self.escAttr(d.username) + ')' : '') + '.</span>'; }); },
-                                    function () { st.innerHTML = '<span class="ws-red">Login failed. Check email and password.</span>'; });
+                                    function (r) {
+                                        if (r && r.status === 429 && r.json) r.json().then(function (d) { st.innerHTML = '<span class="ws-red">' + self.escAttr(d.error) + '</span>'; }, function () { st.innerHTML = '<span class="ws-red">Too many login checks. Try again later.</span>'; });
+                                        else st.innerHTML = '<span class="ws-red">Login failed. Check email and password.</span>';
+                                    });
                         },
 
+                        // Where each dialog gives focus back when it closes (openModal, in jellyscribe.js).
+                        returnFocus: {},
+                        modalIds: ['acctModal', 'reviewModal'],
                         // Show the "Post as" row only when the current Jellyfin user has more than
                         // one enabled Letterboxd account. Leaving the empty first option selected
                         // fans out to every linked account; picking one limits the post to it.
                         populateReviewAccountDropdown: function () {
-                            var self = this, sel = document.getElementById('reviewAccount'), row = document.getElementById('reviewAccountRow');
+                            var self = this, sel = byId('reviewAccount'), row = byId('reviewAccountRow');
                             if (!sel || !row) return;
                             sel.innerHTML = '<option value="">All my Letterboxd accounts</option>';
                             ApiClient.getCurrentUser().then(function (user) {
@@ -571,97 +583,111 @@
                         },
                         /* ===== Integrations & logs ===== */
                         saveIntegrations: function () {
-                            var self = this, prev = [self.config.JellyseerrUrl, self.config.AutoApproveJellyseerrRequests, self.config.NtfyUrl];
-                            // Empty secret fields keep the saved values server-side.
-                            self.config.JellyseerrUrl = document.getElementById('jellyseerrUrl').value.trim() || null;
-                            self.config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
-                            self.config.AutoApproveJellyseerrRequests = document.getElementById('autoApproveJellyseerr').checked;
-                            self.config.NtfyUrl = document.getElementById('ntfyUrl').value.trim() || null;
-                            self.config.NtfyToken = document.getElementById('ntfyToken').value.trim() || null;
-                            self.config.ClearNtfyToken = !self.config.NtfyToken && document.getElementById('ntfyTokenClear').checked;
-                            var btn = document.getElementById('saveIntegrationsBtn'), st = document.getElementById('integrationsStatus');
+                            var self = this, g = function (id) { return byId(id); };
+                            var btn = g('saveIntegrationsBtn'), st = g('integrationsStatus');
                             btn.disabled = true;
                             st.textContent = 'Saving…';
-                            ApiClient.updatePluginConfiguration(self.PluginId, self.config).then(function () {
+                            // saveConfig edits a copy, so a failed save leaves the loaded config (the Seerr fields)
+                            // as it was and a later account save cannot send the unsaved values.
+                            self.saveConfig(function (c) {
+                                c.JellyseerrUrl = g('jellyseerrUrl').value.trim() || null;
+                                // Blank keeps the saved key (the server never sends it back); typing replaces it.
+                                c.JellyseerrApiKey = g('jellyseerrApiKey').value.trim() || null;
+                                c.ClearJellyseerrApiKey = !c.JellyseerrApiKey && g('jellyseerrApiKeyClear').checked;
+                                c.AutoApproveJellyseerrRequests = g('autoApproveJellyseerr').checked;
+                                c.NtfyUrl = g('ntfyUrl').value.trim() || null;
+                                c.NtfyToken = g('ntfyToken').value.trim() || null;
+                                c.ClearNtfyToken = !c.NtfyToken && g('ntfyTokenClear').checked;
+                            }).then(function () {
                                 btn.disabled = false;
                                 st.innerHTML = '<span class="ws-green">Saved</span>';
-                                self.refreshConfig(true).catch(function () { });
                                 Dashboard.processPluginConfigurationUpdateResult();
                             }, function (err) {
-                                self.config.JellyseerrUrl = prev[0]; self.config.AutoApproveJellyseerrRequests = prev[1]; self.config.NtfyUrl = prev[2];
-                                delete self.config.JellyseerrApiKey; delete self.config.NtfyToken; delete self.config.ClearNtfyToken;
                                 btn.disabled = false;
                                 self.saveFailed(err, 'integrationsStatus');
                             });
                         },
                         testJellyseerr: function () {
-                            var url = document.getElementById('jellyseerrUrl').value.trim(), key = document.getElementById('jellyseerrApiKey').value.trim();
-                            var st = document.getElementById('jellyseerrTestStatus');
-                            // An empty key tests the saved one; the server only uses it against the saved URL.
-                            if (!url || (!key && !this.config.HasJellyseerrApiKey)) { st.innerHTML = '<span class="ws-red">URL and API key required.</span>'; return; }
+                            var url = byId('jellyseerrUrl').value.trim(), key = byId('jellyseerrApiKey').value.trim();
+                            var st = byId('jellyseerrTestStatus');
+                            // A blank key tests the saved one; the server only sends it to the saved URL.
+                            if (!url || (!key && !(this.config && this.config.HasJellyseerrApiKey))) { st.innerHTML = '<span class="ws-red">URL and API key required.</span>'; return; }
                             st.innerHTML = '<span class="ws-muted">Testing…</span>';
-                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/TestJellyseerr'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, apiKey: key }) })
+                            ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/TestJellyseerr'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, apiKey: key || null }) })
                                 .then(function (r) { r.json().then(function (d) { st.innerHTML = d.linkedToCurrentUser ? '<span class="ws-green">Connected. Linked to Seerr user ' + WS.escAttr(d.jellyseerrUserId) + '.</span>' : '<span style="color:var(--ws-info);">Connected, but no Seerr user linked to you.</span>'; }); },
                                     function () { st.innerHTML = '<span class="ws-red">Connection failed.</span>'; });
                         },
                         testNtfy: function () {
-                            var self = this;
-                            var url = document.getElementById('ntfyUrl').value.trim(), token = document.getElementById('ntfyToken').value.trim();
-                            var st = document.getElementById('ntfyTestStatus');
+                            var self = this, url = byId('ntfyUrl').value.trim(), token = byId('ntfyToken').value.trim();
+                            var st = byId('ntfyTestStatus');
                             if (!url) { st.innerHTML = '<span class="ws-red">Topic URL required.</span>'; return; }
                             st.innerHTML = '<span class="ws-muted">Sending…</span>';
+                            // A blank token tests the saved one; the server only sends it to the saved URL.
                             ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Notifications/Test'), type: 'POST', contentType: 'application/json', data: JSON.stringify({ url: url, token: token || null }) })
                                 .then(function () { st.innerHTML = '<span class="ws-green">Sent. Check your ntfy app.</span>'; },
                                     function (err) { Promise.resolve(self.errText(err)).then(function (msg) { st.innerHTML = '<span class="ws-red">Send failed: ' + self.escAttr(msg) + '</span>'; }); });
                         },
                         loadLogs: function () {
-                            document.getElementById('logsOutput').textContent = 'Loading…';
+                            byId('logsOutput').textContent = 'Loading…';
                             ApiClient.ajax({ url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Logs', { maxLines: 400 }), type: 'GET' })
                                 .then(function (r) { r.json().then(function (d) {
                                     var lines = d.lines || [];
-                                    document.getElementById('logsOutput').textContent = lines.length
+                                    byId('logsOutput').textContent = lines.length
                                         ? lines.join('\n')
                                         : (d.error ? 'Error: ' + d.error : 'No recent log lines.');
                                 }); })
-                                .catch(function () { document.getElementById('logsOutput').textContent = 'Could not load logs.'; });
+                                .catch(function () { byId('logsOutput').textContent = 'Could not load logs.'; });
                         }
                     };
-
-                    // Shared styles and helpers (jellyscribe.css/.js, served by SidebarController). The page
-                    // stays hidden until both are in, so it never shows unstyled.
-                    var root = document.getElementById('letterboxdSyncConfigPage');
-                    var assetUrl = function (file) {
-                        var path = 'LetterboxdSync/Web/' + file;
-                        if (window.ApiClient && ApiClient.getUrl) return ApiClient.getUrl(path);
-                        var at = location.pathname.lastIndexOf('/web/');
-                        return (at > 0 ? location.pathname.substring(0, at) : '') + '/' + path;
-                    };
-                    var sharedAsset = function (tag, file) {
-                        var el = document.getElementById('jellyscribe-' + tag);
-                        if (el && el.getAttribute('data-loaded')) return Promise.resolve();
+                    /* Loads this build's shared stylesheet and script (jellyscribe.css and jellyscribe.js), then
+                       starts the page, which stays hidden until both are in. The version is stamped in at build
+                       time; it is in each URL and in the key a loaded copy is reused by, and the shared script
+                       registers itself under it, so a page served after an upgrade never runs against an older
+                       copy still loaded in this tab. */
+                    var V = '@@JELLYSCRIBE_VERSION@@';
+                    function sharedAsset(tag, file) {
+                        var key = tag + '[data-jellyscribe="' + file + '"]', el = document.head.querySelector(key + '[data-v="' + V + '"]');
+                        if (el && el.hasAttribute('data-loaded')) return Promise.resolve();
+                        if (!el) {
+                            var path = 'LetterboxdSync/Web/' + file;
+                            // Through Jellyfin's client, so a server under a base URL works; else relative to /web/.
+                            var url = window.ApiClient && ApiClient.getUrl ? ApiClient.getUrl(path, { v: V }) : '../' + path + '?v=' + encodeURIComponent(V);
+                            el = document.createElement(tag);
+                            el.setAttribute('data-jellyscribe', file);
+                            el.setAttribute('data-v', V);
+                            if (tag === 'link') { el.rel = 'stylesheet'; el.href = url; } else el.src = url;
+                            el.addEventListener('load', function () {
+                                el.setAttribute('data-loaded', '');
+                                // Another build's copy (from before an upgrade) is no longer needed.
+                                Array.prototype.forEach.call(document.head.querySelectorAll(key), function (old) { if (old !== el) old.remove(); });
+                            }, { once: true });
+                            el.addEventListener('error', function () { el.remove(); }, { once: true });
+                            document.head.appendChild(el);
+                        }
                         return new Promise(function (resolve, reject) {
-                            if (!el) {
-                                el = document.createElement(tag);
-                                el.id = 'jellyscribe-' + tag;
-                                if (tag === 'link') { el.rel = 'stylesheet'; el.href = assetUrl(file); } else el.src = assetUrl(file);
-                                document.head.appendChild(el);
-                            }
-                            el.addEventListener('load', function () { el.setAttribute('data-loaded', 'true'); resolve(); });
-                            el.addEventListener('error', function () { if (el.parentNode) el.parentNode.removeChild(el); reject(new Error(file)); });
+                            var done = function (e) {
+                                el.removeEventListener('load', done); el.removeEventListener('error', done);
+                                if (e.type === 'load') resolve(); else reject(new Error(file));
+                            };
+                            el.addEventListener('load', done); el.addEventListener('error', done);
                         });
-                    };
+                    }
+                    function failed() {
+                        if (!root.isConnected) return;
+                        root.style.visibility = '';
+                        root.innerHTML = '<p style="padding:2em;">Couldn\'t load the Jellyscribe page. Reload to try again.</p>';
+                    }
+                    if (!root) return;
                     Promise.all([sharedAsset('link', 'jellyscribe.css'), sharedAsset('script', 'jellyscribe.js')]).then(function () {
-                        // Left (or re-opened) while loading: this copy of the page is gone.
-                        if (!document.documentElement.contains(root)) return;
-                        var shared = window.JellyscribeShared;
+                        if (!root.isConnected) return; // left while loading
+                        var make = window.JellyscribeShared && window.JellyscribeShared[V];
+                        if (typeof make !== 'function') { failed(); return; }
+                        var shared = make(root);
                         Object.keys(shared).forEach(function (k) { if (!(k in WS)) WS[k] = shared[k]; });
                         root.style.visibility = '';
                         window.WS = WS;
                         WS.init();
-                    }, function () {
-                        root.style.visibility = '';
-                        root.innerHTML = '<p style="padding:2em;">Couldn\'t load the Jellyscribe page. Reload to try again.</p>';
-                    });
+                    }, failed);
                 })();
                 </script>
 

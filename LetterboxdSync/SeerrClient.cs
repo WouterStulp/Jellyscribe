@@ -22,6 +22,9 @@ public class SeerrClient : IDisposable
     private static readonly HttpClient SharedHttp = WithDefaultHeaders(new HttpClient(new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        // Shared by every Seerr configuration: a cookie one response set must never ride on
+        // another's request.
+        UseCookies = false,
     }));
 
     private readonly HttpClient _http;
@@ -30,19 +33,9 @@ public class SeerrClient : IDisposable
     private readonly string _baseUrl;
     private readonly string _apiKey;
 
-    // Seerr's Permission bitmask (server/lib/permissions.ts in seerr-team/seerr).
-    private const int PermissionAdmin = 2;
-    private const int PermissionManageRequests = 16;
-    private const int PermissionAutoApprove = 128;
-    private const int PermissionAutoApproveMovie = 256;
-    private const int PermissionAutoApproveTv = 512;
-
     private readonly bool _autoApprove;
 
     private Dictionary<string, int>? _jellyfinIdToJellyseerrId;
-
-    // One lookup per Seerr user per client (a client lives for one sync run). Null = unreadable.
-    private readonly Dictionary<int, int?> _permissionsByUserId = new();
 
     public SeerrClient(string baseUrl, string apiKey, ILogger logger, HttpMessageHandler? handler = null,
         bool autoApprove = true)
@@ -307,11 +300,8 @@ public class SeerrClient : IDisposable
             }
         }
 
-        var url = $"{_baseUrl}/api/v1/request";
-        var body = $"{{\"mediaType\":\"movie\",\"mediaId\":{tmdbId},\"userId\":{jellyseerrUserId}}}";
-        using var content = new StringContent(body, Encoding.UTF8, "application/json");
-
-        using var response = await PostAsync(url, content).ConfigureAwait(false);
+        var body = $"{{\"mediaType\":\"movie\",\"mediaId\":{tmdbId}}}";
+        using var response = await PostRequestAsUserAsync(body, jellyseerrUserId).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         if (response.IsSuccessStatusCode)
@@ -350,12 +340,9 @@ public class SeerrClient : IDisposable
         // to piggyback on, so this is one dedicated GET.
         var title = await GetSeriesInfoAsync(tmdbId).ConfigureAwait(false);
 
-        var url = $"{_baseUrl}/api/v1/request";
         var seasonsJson = seasonNumbers.Count > 0 ? "[" + string.Join(",", seasonNumbers) + "]" : "\"all\"";
-        var body = $"{{\"mediaType\":\"tv\",\"mediaId\":{tmdbId},\"userId\":{jellyseerrUserId},\"seasons\":{seasonsJson}}}";
-        using var content = new StringContent(body, Encoding.UTF8, "application/json");
-
-        using var response = await PostAsync(url, content).ConfigureAwait(false);
+        var body = $"{{\"mediaType\":\"tv\",\"mediaId\":{tmdbId},\"seasons\":{seasonsJson}}}";
+        using var response = await PostRequestAsUserAsync(body, jellyseerrUserId).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         var seasonsLabel = seasonNumbers.Count > 0 ? string.Join(",", seasonNumbers) : "all";
 
@@ -389,6 +376,25 @@ public class SeerrClient : IDisposable
         _logger.LogWarning("Seerr TV request failed for TMDb {TmdbId} S[{Seasons}] (user {UserId}): {Status} {Body}",
             tmdbId, seasonsLabel, jellyseerrUserId, (int)response.StatusCode, Truncate(responseBody, 200));
         return (RequestResult.Failed, title);
+    }
+
+    /// <summary>
+    /// POST /api/v1/request acting as the Seerr user the request is for, via X-API-User. Seerr
+    /// (server/middleware/auth.ts) treats an API-key call without that header as user 1, the
+    /// owner admin, and server/entity/MediaRequest.ts decides PENDING vs APPROVED from the
+    /// permissions of that acting user, not of the user the request is attributed to. Without the
+    /// header every request was approved as the admin. With it, Seerr approves on creation only
+    /// when the requester holds Auto-Approve themselves. The body carries no userId: Seerr rejects
+    /// a userId from a caller without Manage Users and Manage Requests, and with the header the
+    /// acting user already is the requester.
+    /// </summary>
+    private async Task<HttpResponseMessage> PostRequestAsUserAsync(string body, int jellyseerrUserId)
+    {
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/v1/request") { Content = content };
+        request.Headers.TryAddWithoutValidation("X-API-User",
+            jellyseerrUserId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return await SendAsync(request).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -579,19 +585,16 @@ public class SeerrClient : IDisposable
     /// Makes sure a request we just created will actually be handed to Radarr/Sonarr.
     /// <para>
     /// A 2xx from POST /api/v1/request only means Seerr stored the request. Seerr calls
-    /// sendToRadarr/sendToSonarr only once a request is APPROVED, and it decides auto-approval
-    /// from the permissions of the user the request is attributed to, <em>not</em> from the API
-    /// key that created it. So a request attributed to a Seerr user without "Auto-Approve" is
-    /// created PENDING and sits there forever, which is exactly issue #110: the requests appear
-    /// in Seerr but never reach Radarr.
+    /// sendToRadarr/sendToSonarr only once a request is APPROVED, and it approves on creation
+    /// only when the acting user holds Auto-Approve or Manage Requests. Requests are created as
+    /// the requester (see <see cref="PostRequestAsUserAsync"/>), so one for a Seerr user without
+    /// Auto-Approve comes back PENDING and would sit there, the symptom of issue #110.
     /// </para>
     /// <para>
-    /// When auto-approve is on we follow up with POST /api/v1/request/{id}/approve, which the
-    /// admin API key is permitted to do, but only when the Seerr user is themselves allowed to
-    /// auto-approve that media type. Otherwise any Jellyfin user could enable auto-request on
-    /// their own account and push an unlimited watchlist past Seerr's moderation queue. When
-    /// it's off, or the user lacks the permission, we leave the request in the moderation
-    /// queue and say so plainly, so the symptom is diagnosable from the log alone.
+    /// When the admin's auto-approve switch is on we follow up with
+    /// POST /api/v1/request/{id}/approve using the admin API key (no X-API-User, so Seerr acts as
+    /// the owner admin, who holds Manage Requests). When it's off we leave the request in the
+    /// moderation queue and say so plainly, so the symptom is diagnosable from the log alone.
     /// </para>
     /// </summary>
     private async Task EnsureApprovedAsync(string responseBody, int tmdbId, int jellyseerrUserId,
@@ -604,73 +607,13 @@ public class SeerrClient : IDisposable
         {
             _logger.LogWarning(
                 "Seerr {MediaType} request {RequestId} for TMDb {TmdbId} (user {UserId}) was created PENDING and "
-                + "will not reach {Arr} until it is approved. The Seerr user it is attributed to lacks Auto-Approve; "
+                + "will not reach {Arr} until it is approved. That Seerr user lacks Auto-Approve; "
                 + "approve it in Seerr, grant that user Auto-Approve, or enable auto-approve in Jellyscribe.",
                 mediaType, requestId, tmdbId, jellyseerrUserId, arrName);
             return;
         }
 
-        if (!await MayAutoApproveAsync(jellyseerrUserId, mediaType).ConfigureAwait(false))
-        {
-            _logger.LogInformation(
-                "Seerr {MediaType} request {RequestId} for TMDb {TmdbId} stays PENDING: Seerr user {UserId} may not "
-                + "auto-approve this media type, so it waits for an admin in Seerr before it reaches {Arr}.",
-                mediaType, requestId, tmdbId, jellyseerrUserId, arrName);
-            return;
-        }
-
         await ApproveRequestAsync(requestId, tmdbId, jellyseerrUserId, mediaType, arrName).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Mirrors Seerr's own auto-approve rule for a request attributed to this user: ADMIN,
-    /// MANAGE_REQUESTS, AUTO_APPROVE, or the media type's AUTO_APPROVE flag. Fails closed:
-    /// unreadable permissions mean no approval.
-    /// </summary>
-    private async Task<bool> MayAutoApproveAsync(int jellyseerrUserId, string mediaType)
-    {
-        var permissions = await GetUserPermissionsAsync(jellyseerrUserId).ConfigureAwait(false);
-        if (permissions == null)
-            return false;
-
-        var typeFlag = mediaType == "tv" ? PermissionAutoApproveTv : PermissionAutoApproveMovie;
-        var allowed = PermissionAdmin | PermissionManageRequests | PermissionAutoApprove | typeFlag;
-        return (permissions.Value & allowed) != 0;
-    }
-
-    private async Task<int?> GetUserPermissionsAsync(int jellyseerrUserId)
-    {
-        if (_permissionsByUserId.TryGetValue(jellyseerrUserId, out var cached))
-            return cached;
-
-        int? permissions = null;
-        try
-        {
-            using var response = await GetAsync($"{_baseUrl}/api/v1/user/{jellyseerrUserId}").ConfigureAwait(false);
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object
-                    && doc.RootElement.TryGetProperty("permissions", out var el)
-                    && el.ValueKind == JsonValueKind.Number)
-                    permissions = el.GetInt32();
-            }
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            _logger.LogDebug("Seerr permission lookup errored for user {UserId}: {Message}", jellyseerrUserId, ex.Message);
-        }
-
-        if (permissions == null)
-        {
-            _logger.LogWarning(
-                "Could not read Seerr permissions for user {UserId}; their Jellyscribe requests stay PENDING for an admin.",
-                jellyseerrUserId);
-        }
-
-        _permissionsByUserId[jellyseerrUserId] = permissions;
-        return permissions;
     }
 
     /// <summary>
@@ -731,17 +674,13 @@ public class SeerrClient : IDisposable
     /// Scope is deliberately narrow. Only requests that are PENDING, attributed to
     /// <paramref name="jellyseerrUserId"/>, AND whose TMDb id is in <paramref name="tmdbIds"/> (the
     /// watchlist we just synced) are touched, so a pending request someone made by hand in Seerr
-    /// for something unrelated is never swept up. Nothing is approved unless the user may
-    /// auto-approve that media type in Seerr. Returns (approved, failed).
+    /// for something unrelated is never swept up. Returns (approved, failed).
     /// </para>
     /// </summary>
     public async Task<(int Approved, int Failed)> ApprovePendingForUserAsync(
         int jellyseerrUserId, IReadOnlyCollection<int> tmdbIds, string mediaType = "movie")
     {
         if (!_autoApprove || tmdbIds.Count == 0)
-            return (0, 0);
-
-        if (!await MayAutoApproveAsync(jellyseerrUserId, mediaType).ConfigureAwait(false))
             return (0, 0);
 
         var wanted = new HashSet<int>(tmdbIds);

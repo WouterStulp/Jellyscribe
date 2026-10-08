@@ -33,6 +33,8 @@ public class FilmLookupCacheTests : IDisposable
 {
     private static readonly ILogger Log = NullLoggerFactory.Instance.CreateLogger("test");
 
+    private static readonly Func<CancellationToken, Task> DefaultPause = LetterboxdSyncRunner.FilmPause;
+
     private readonly string _tempDir;
 
     public FilmLookupCacheTests()
@@ -41,11 +43,14 @@ public class FilmLookupCacheTests : IDisposable
         Directory.CreateDirectory(_tempDir);
         SyncHistory.DataPathOverride = Path.Combine(_tempDir, "sync-history.jsonl");
         SyncHistory.ResetForTesting();
+        LetterboxdScraper.ResetFilmCacheForTesting(9_000_001, 9_000_003);
+        LetterboxdApiClient.ResetFilmCacheForTesting(9_000_002, 9_000_003);
     }
 
     public void Dispose()
     {
         LetterboxdServiceFactory.OverrideForTesting = null;
+        LetterboxdSyncRunner.FilmPause = DefaultPause;
         SyncHistory.DataPathOverride = null;
         SyncHistory.ResetForTesting();
         try { Directory.Delete(_tempDir, true); } catch { }
@@ -140,8 +145,7 @@ public class FilmLookupCacheTests : IDisposable
         Assert.Equal(1, apiLookups);
     }
 
-    [Fact]
-    public async Task Runner_PacingOverlapsALookupThatAlreadyThrottled()
+    private (LetterboxdSyncRunner Runner, string UserId) RunnerWithOneFilm(ILetterboxdService service)
     {
         var paths = Substitute.For<IApplicationPaths>();
         paths.PluginConfigurationsPath.Returns(_tempDir);
@@ -153,14 +157,14 @@ public class FilmLookupCacheTests : IDisposable
             .Returns(_ => new PluginConfiguration());
         new Plugin(paths, xml);
 
-        var user = new User("lachlan", "test-provider-id", "test-reset-id");
+        var user = new User("demo-user", "test-provider-id", "test-reset-id");
         var userId = user.Id.ToString("N");
         var userManager = Substitute.For<IUserManager>();
         userManager.GetUsers().Returns(new[] { user });
         Plugin.Instance!.Configuration.Accounts.Add(new Account
         {
             UserJellyfinId = userId,
-            LetterboxdUsername = "lb-user",
+            LetterboxdUsername = "demo-cinephile",
             LetterboxdPassword = "secret",
             Enabled = true,
             SkipPreviouslySynced = false,
@@ -174,23 +178,60 @@ public class FilmLookupCacheTests : IDisposable
         userDataManager.GetUserData(user, movie).Returns(
             new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow });
 
-        // A scraping cache miss: the lookup itself sleeps its 3-5s throttle.
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        return (new LetterboxdSyncRunner(NullLoggerFactory.Instance, libraryManager, userManager, userDataManager), userId);
+    }
+
+    // Records the order of the lookup and the pause, so the tests assert sequence, not timing.
+    private static ILetterboxdService RecordingService(bool website, List<string> calls)
+    {
         var service = Substitute.For<ILetterboxdService>();
+        service.IsWebsiteSession.Returns(website);
         service.LookupFilmByTmdbIdAsync(329865).Returns(async _ =>
         {
-            await Task.Delay(TimeSpan.FromSeconds(4.5));
+            lock (calls) calls.Add("lookup-start");
+            await Task.Yield();
+            lock (calls) calls.Add("lookup-done");
             return new FilmResult("arrival", "290327", null);
         });
-        service.GetDiaryInfoAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(new DiaryInfo(null, false));
-        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        service.GetDiaryInfoAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(_ =>
+        {
+            lock (calls) calls.Add("diary");
+            return new DiaryInfo(null, false);
+        });
+        LetterboxdSyncRunner.FilmPause = _ =>
+        {
+            lock (calls) calls.Add("pause");
+            return Task.CompletedTask;
+        };
+        return service;
+    }
 
-        var runner = new LetterboxdSyncRunner(NullLoggerFactory.Instance, libraryManager, userManager, userDataManager);
-        var timer = Stopwatch.StartNew();
+    [Fact]
+    public async Task Runner_OnTheApi_StartsThePauseBeforeTheLookup()
+    {
+        var calls = new List<string>();
+        var service = RecordingService(website: false, calls);
+        var (runner, userId) = RunnerWithOneFilm(service);
+
         Assert.True(await runner.TryRunForUserAsync(userId, "test", new Progress<double>(), CancellationToken.None));
 
-        // Stacked delays would take 4.5s + 3-5s; overlapped they take at most the longer one.
-        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(6.5), $"film took {timer.Elapsed}");
+        Assert.Equal(new[] { "pause", "lookup-start", "lookup-done", "diary" }, calls);
         await service.Received(1).MarkAsWatchedAsync("arrival", "290327", Arg.Any<DateTime?>(), Arg.Any<bool>(),
             Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<double?>());
+    }
+
+    // On the website the lookup fetches the film page itself; the diary page must not follow it
+    // straight away, so the pause comes after the lookup, not alongside it.
+    [Fact]
+    public async Task Runner_OnTheWebsite_PausesAfterTheLookup()
+    {
+        var calls = new List<string>();
+        var service = RecordingService(website: true, calls);
+        var (runner, userId) = RunnerWithOneFilm(service);
+
+        Assert.True(await runner.TryRunForUserAsync(userId, "test", new Progress<double>(), CancellationToken.None));
+
+        Assert.Equal(new[] { "lookup-start", "lookup-done", "pause", "diary" }, calls);
     }
 }

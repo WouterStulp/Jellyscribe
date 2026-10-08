@@ -134,6 +134,7 @@ public class SerializdPlaybackTests : IDisposable
         var svc = Substitute.For<ISerializdService>();
         svc.ResolveSeasonIdAsync(220542, Arg.Any<int>()).Returns(Task.FromResult<int?>(null));
         svc.ResolveSeasonIdAsync(220542, 1).Returns(Task.FromResult<int?>(9001));
+        svc.GetSeasonEpisodeCountAsync(220542, 1).Returns(Task.FromResult<int?>(48));
         SerializdServiceFactory.OverrideForTesting = (_, _, _) => Task.FromResult(svc);
 
         await _handler.HandlePlaybackStoppedAsync(new PlaybackStopEventArgs
@@ -147,6 +148,33 @@ public class SerializdPlaybackTests : IDisposable
             Arg.Is<IReadOnlyList<int>>(l => l.Count == 1 && l[0] == 25));
         await svc.Received(1).CreateEpisodeLogAsync(220542, 9001, 25, Arg.Any<DateTime>(), Arg.Any<int?>(), false);
         Assert.True(SerializdSyncHistory.Has(idHex, "me@example.com", 220542, 2, 1, SerializdSyncHistory.KindLog));
+    }
+
+    [Fact]
+    public async Task Episode_PastTheEndOfSerializdsSingleSeason_DoesNotLog()
+    {
+        var (user, idHex) = MakeUser();
+        AddSerializdAccount(idHex);
+        PlaybackHandler.SeriesTmdbIdReader = _ => 220542;
+        SerializdSeasonFallback.SeasonLengthsReader = _ => new Dictionary<int, int> { [1] = 20, [2] = 24 };
+
+        var svc = Substitute.For<ISerializdService>();
+        svc.ResolveSeasonIdAsync(220542, Arg.Any<int>()).Returns(Task.FromResult<int?>(null));
+        svc.ResolveSeasonIdAsync(220542, 1).Returns(Task.FromResult<int?>(9001));
+        svc.GetSeasonEpisodeCountAsync(220542, 1).Returns(Task.FromResult<int?>(24));
+        SerializdServiceFactory.OverrideForTesting = (_, _, _) => Task.FromResult(svc);
+
+        await _handler.HandlePlaybackStoppedAsync(new PlaybackStopEventArgs
+        {
+            Item = MakeEpisode(2, 5),
+            PlayedToCompletion = true,
+            Users = new List<User> { user },
+        });
+
+        await svc.DidNotReceive().LogEpisodesAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<int>>());
+        await svc.DidNotReceive().CreateEpisodeLogAsync(
+            Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<DateTime>(), Arg.Any<int?>(), Arg.Any<bool>());
+        Assert.False(SerializdSyncHistory.Has(idHex, "me@example.com", 220542, 2, 5, SerializdSyncHistory.KindLog));
     }
 
     [Fact]

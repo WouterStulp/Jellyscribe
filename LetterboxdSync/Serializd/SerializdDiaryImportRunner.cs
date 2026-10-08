@@ -52,11 +52,12 @@ public class SerializdDiaryImportRunner
     public async Task RunForAllAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         // Shares the export runner's gate so an import never logs in to Serializd while a
-        // catch-up is mid-run against the same accounts.
+        // catch-up is mid-run against the same accounts. It waits rather than skips, so a long
+        // catch-up never costs the night's import.
         if (!await SerializdSyncGate.Instance.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
-            _logger.LogWarning("Serializd sync already running, skipping diary import");
-            return;
+            _logger.LogInformation("A Serializd sync is running; the diary import starts when it finishes");
+            await SerializdSyncGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         try
@@ -75,10 +76,10 @@ public class SerializdDiaryImportRunner
                 {
                     await ImportOneAsync(user, account, cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogError("Serializd diary import failed for {Username} as {Email}: {Message}",
-                        user.Username, account.Email, ex.Message);
+                    _logger.LogError("Serializd diary import failed for {Username} as {Account}: {Message}",
+                        user.Username, LogRedaction.AccountTag(account.Email), ex.Message);
                 }
 
                 processed++;
@@ -100,7 +101,7 @@ public class SerializdDiaryImportRunner
         using (var service = await SerializdServiceFactory
                    .CreateAuthenticatedAsync(account.Email, account.Password, _logger, user.Username).ConfigureAwait(false))
         {
-            diary = await service.GetDiaryEpisodesAsync().ConfigureAwait(false);
+            diary = await service.GetDiaryEpisodesAsync(cancellationToken).ConfigureAwait(false);
         }
 
         if (diary.Count == 0) return;
@@ -140,7 +141,7 @@ public class SerializdDiaryImportRunner
         }
 
         if (marked > 0)
-            _logger.LogInformation("Serializd diary import: marked {Count} episodes played for {Username} as {Email}",
-                marked, user.Username, account.Email);
+            _logger.LogInformation("Serializd diary import: marked {Count} episodes played for {Username} as {Account}",
+                marked, user.Username, LogRedaction.AccountTag(account.Email));
     }
 }

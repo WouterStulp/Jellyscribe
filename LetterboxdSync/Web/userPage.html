@@ -4,17 +4,16 @@
     <title>Jellyscribe</title>
 </head>
 <body>
-    <div id="letterboxdUserPage" data-role="page" class="page type-interior ws-app" style="visibility:hidden;"
+    <div id="letterboxdUserPage" data-role="page" class="page type-interior" style="visibility:hidden;"
          data-require="emby-input,emby-button,emby-checkbox,emby-select">
         <div data-role="content">
             <div class="content-primary">
                 <style>
-                /* User-page-only rules; the shared design system is in jellyscribe.css. */
-                #letterboxdUserPage { --ws-rail-w: 240px; --ws-main-x: 32px; }
+                /* User-page-only rules; the shared styles and the bundled fonts are in jellyscribe.css. */
+                #letterboxdUserPage { --ws-rail-w: 240px; --ws-main-x: 32px; --ws-filters-gap: 12px; }
                 #letterboxdUserPage .ws-back { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--ws-faint); font-weight: 500; font-size: 13px; text-decoration: none; cursor: pointer; transition: .13s; }
                 #letterboxdUserPage .ws-back:hover { background: var(--ws-surface-2); color: var(--ws-text); }
                 #letterboxdUserPage .ws-back svg { width: 15px; height: 15px; flex: none; }
-                #letterboxdUserPage .ws-filters { margin-bottom: 12px; }
                 </style>
 
                 <div class="ws">
@@ -24,8 +23,8 @@
                         <a class="ws-back" href="/web/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Back to Jellyfin</a>
                         <nav class="ws-nav" id="wsNav">
                             <div class="ws-navlabel">You</div>
-                            <a class="active" data-sec="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</a>
-                            <a data-sec="accounts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>My accounts<span class="ws-count" id="acctCount"></span></a>
+                            <button type="button" class="active" aria-current="page" data-sec="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</button>
+                            <button type="button" data-sec="accounts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>My accounts<span class="ws-count" id="acctCount"></span></button>
                         </nav>
                         </div>
                     </aside>
@@ -48,13 +47,13 @@
                             <div class="ws-tiles">
                                 <div class="ws-tile film"><div class="n" id="statFilm">-</div><div class="k ws-label">Films logged</div><svg class="ws-spark" id="sparkFilm" viewBox="0 0 120 26" preserveAspectRatio="none"></svg></div>
                                 <div class="ws-tile tv"><div class="n" id="statTv">-</div><div class="k ws-label">Episodes logged</div><svg class="ws-spark" id="sparkTv" viewBox="0 0 120 26" preserveAspectRatio="none"></svg></div>
-                                <div class="ws-tile" style="--ac:var(--ws-primary);"><div class="n" style="color:var(--ws-primary);" id="statWatchlist">-</div><div class="k ws-label">On watchlists</div><div class="ws-muted" id="statWatchlistSub" style="font-size:11px;margin-top:4px;"></div></div>
+                                <div class="ws-tile" style="--ac:var(--ws-primary);"><div class="n" style="color:var(--ws-primary-text);" id="statWatchlist">-</div><div class="k ws-label">On watchlists</div><div class="ws-muted" id="statWatchlistSub" style="font-size:11px;margin-top:4px;"></div></div>
                                 <div class="ws-tile"><div class="n ws-green" id="statSynced">-</div><div class="k ws-label">Synced</div></div>
                                 <div class="ws-tile"><div class="n" style="color:var(--ws-info);" id="statRewatches">-</div><div class="k ws-label">Rewatches</div></div>
                                 <div class="ws-tile"><div class="n ws-red" id="statFailed">-</div><div class="k ws-label">Failed</div></div>
                             </div>
                             <div class="ws-sect-title"><h2>Recent activity</h2><span class="rule"></span></div>
-                            <input type="search" class="ws-input" id="historySearch" placeholder="Search titles" style="max-width:320px;margin-bottom:10px;" />
+                            <input type="search" class="ws-input" id="historySearch" placeholder="Search titles" aria-label="Search activity by title" autocomplete="off" style="max-width:320px;margin-bottom:10px;" />
                             <div class="ws-filters" id="ovStatusFilters">
                                 <button type="button" class="ws-chip on" data-s="all">All</button>
                                 <button type="button" class="ws-chip" data-s="hide-skipped">Hide skipped</button>
@@ -78,12 +77,12 @@
                     </main>
                 </div>
 
-                <div class="ws-modal-ov" id="acctModal"><div class="ws-modal">
+                <dialog class="ws-modal-ov" id="acctModal" aria-labelledby="acctModalTitle"><div class="ws-modal">
                     <button type="button" class="ws-modal-x" aria-label="Close">&times;</button>
                     <h3 id="acctModalTitle">Link a diary</h3>
-                    <div class="ws-row"><label class="ws-field">Service</label><select class="ws-input" id="mSvc"><option value="serializd">Serializd — TV</option><option value="letterboxd">Letterboxd — Film</option></select></div>
-                    <div class="ws-row"><label class="ws-field" id="mUserLabel">Email or username</label><input type="text" class="ws-input" id="mUsername" /></div>
-                    <div class="ws-row"><label class="ws-field">Password</label><input type="password" class="ws-input" id="mPassword" /></div>
+                    <div class="ws-row"><label class="ws-field" for="mSvc">Service</label><select class="ws-input" id="mSvc"><option value="serializd">Serializd: TV</option><option value="letterboxd">Letterboxd: Film</option></select></div>
+                    <div class="ws-row"><label class="ws-field" id="mUserLabel" for="mUsername">Email or username</label><input type="text" class="ws-input" id="mUsername" autocomplete="off" /></div>
+                    <div class="ws-row"><label class="ws-field" for="mPassword">Password<span class="ws-saved" id="mPasswordSaved" hidden>Saved</span></label><input type="password" class="ws-input" id="mPassword" autocomplete="new-password" /></div>
                     <!-- NOTE: these ids deliberately avoid the word "cookie". Privacy and
                          anti-annoyance filter lists (Ghostery, uBlock annoyance lists, AdGuard,
                          Brave shields) carry generic cosmetic rules like [id*="cookie" i] to kill
@@ -93,46 +92,52 @@
                          2FA-blocked users at, and they have no way to tell it is their extension.
                          Reported in issue #112. Keep the visible label as "Raw cookies"; only the
                          attributes need to stay boring. -->
-                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span></label><input type="text" class="ws-input" id="mAuthBlob" placeholder="From a signed-in browser (incl. cf_clearance)" /><label class="ws-muted" id="mAuthBlobClearRow" style="display:none;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="mAuthBlobClear" /> Clear the saved cookies</label></div>
-                    <div class="ws-row" id="mUserAgentRow" style="display:none;"><label class="ws-field">User-Agent <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mUserAgent" placeholder="Mozilla/5.0 …" /></div>
+                    <div class="ws-row" id="mAuthBlobRow" style="display:none;"><label class="ws-field" for="mAuthBlob">Raw cookies <span class="ws-muted" style="text-transform:none;">(recommended for Letterboxd)</span><span class="ws-saved" id="mAuthBlobSaved" hidden>Saved</span></label><input type="text" class="ws-input" id="mAuthBlob" autocomplete="off" placeholder="From a signed-in browser (incl. cf_clearance)" /><label class="ws-muted" id="mAuthBlobClearRow" style="display:none;gap:7px;align-items:center;margin-top:6px;font-size:12.5px;"><input type="checkbox" id="mAuthBlobClear" /> Remove saved cookies</label></div>
+                    <div class="ws-row" id="mUserAgentRow" style="display:none;"><label class="ws-field" for="mUserAgent">User-Agent <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mUserAgent" placeholder="Mozilla/5.0 …" /></div>
                     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;"><button type="button" class="ws-btn" id="mVerifyBtn">Verify login</button><span id="mVerifyStatus" class="ws-muted" style="font-size:12.5px;"></span></div>
                     <div class="ws-checks" id="mChecks"></div>
-                    <div class="ws-row" id="mWatchNameRow" style="margin-top:12px;"><label class="ws-field">Watchlist name <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mWatchName" placeholder="" /></div>
-                    <div class="ws-row" id="mLibRow" style="display:none;margin-top:12px;"><label class="ws-field">Excluded libraries <span class="ws-muted" style="text-transform:none;">(never synced to this account; applies to future syncs)</span></label><div class="ws-checks" id="mLibs"></div></div>
+                    <div class="ws-row" id="mWatchNameRow" style="margin-top:12px;"><label class="ws-field" for="mWatchName">Watchlist name <span class="ws-muted" style="text-transform:none;">(optional)</span></label><input type="text" class="ws-input" id="mWatchName" placeholder="" /></div>
+                    <div class="ws-row" id="mLibRow" style="display:none;margin-top:12px;"><span class="ws-field" id="mLibsLabel">Excluded libraries <span class="ws-muted" style="text-transform:none;">(never synced to this account; applies to future syncs)</span></span><div class="ws-checks" id="mLibs" role="group" aria-labelledby="mLibsLabel"></div></div>
                     <div style="display:flex;gap:10px;margin-top:18px;align-items:center;"><button type="button" class="ws-btn primary" id="mSaveBtn">Save</button><button type="button" class="ws-btn" id="mCancelBtn">Cancel</button><button type="button" class="ws-btn danger" id="mDeleteBtn" style="margin-left:auto;display:none;">Remove</button></div>
+                    <div id="mConfirmRow" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid var(--ws-crit);border-radius:8px;font-size:12.5px;align-items:center;gap:10px;flex-wrap:wrap;"><span>Remove this account? Jellyscribe stops syncing to it. Nothing on the diary itself is deleted.</span><span style="margin-left:auto;display:flex;gap:8px;"><button type="button" class="ws-btn danger" id="mConfirmRemoveBtn">Yes, remove</button><button type="button" class="ws-btn" id="mConfirmKeepBtn">Keep it</button></span></div>
                     <div id="mStatus" style="font-size:12.5px;margin-top:8px;"></div>
-                </div></div>
+                </div></dialog>
 
-                <div class="ws-modal-ov" id="reviewModal"><div class="ws-modal">
+                <dialog class="ws-modal-ov" id="reviewModal" aria-labelledby="reviewTitle"><div class="ws-modal">
                     <button type="button" class="ws-modal-x" aria-label="Close">&times;</button>
                     <h3 id="reviewTitle">Write review</h3>
-                    <textarea id="reviewText" rows="4" class="ws-input" placeholder="Write your review…"></textarea>
-                    <div class="ws-row" style="margin-top:12px;"><label class="ws-field">Rating</label><div id="starRating"><span class="ws-star" data-val="1">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="2">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="3">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="4">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="5">&#9734;<span class="ws-star-on">&#9733;</span></span><span id="ratingLabel" class="ws-muted" style="margin-left:8px;font-size:12px;">No rating</span></div><input type="hidden" id="reviewRating" value="" /></div>
+                    <textarea id="reviewText" aria-label="Review" rows="4" class="ws-input" placeholder="Write your review…"></textarea>
+                    <div class="ws-row" style="margin-top:12px;"><span class="ws-field" id="ratingField">Rating</span><div id="starRating" role="slider" tabindex="0" aria-labelledby="ratingField" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-valuetext="No rating"><span class="ws-star" data-val="1">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="2">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="3">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="4">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="5">&#9734;<span class="ws-star-on">&#9733;</span></span><span id="ratingLabel" class="ws-muted" style="margin-left:8px;font-size:12px;">No rating</span></div><input type="hidden" id="reviewRating" value="" /></div>
                     <label class="ws-muted" style="display:block;margin:8px 0;font-size:12.5px;"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label>
                     <label class="ws-muted" id="reviewRewatchRow" style="display:block;margin:8px 0;font-size:12.5px;"><input type="checkbox" id="reviewRewatch" /> This is a rewatch</label>
                     <div id="rewatchDateRow" style="display:none;margin:8px 0;">
-                        <label class="ws-field" style="display:block;margin-bottom:4px;">Date watched</label>
+                        <label class="ws-field" for="reviewDate" style="display:block;margin-bottom:4px;">Date watched</label>
                         <input type="date" id="reviewDate" class="ws-input" style="max-width:200px;" />
                     </div>
                     <div id="reviewAccountRow" style="display:none;margin:8px 0;">
-                        <label class="ws-field" style="display:block;margin-bottom:4px;">Post as</label>
+                        <label class="ws-field" for="reviewAccount" style="display:block;margin-bottom:4px;">Post as</label>
                         <select id="reviewAccount" class="ws-input" style="max-width:280px;">
                             <option value="">All my Letterboxd accounts</option>
                         </select>
                         <span class="ws-muted" style="font-size:11.5px;display:block;margin-top:4px;">Defaults to posting on every linked Letterboxd account. Pick one to limit to that account only.</span>
                     </div>
                     <div style="display:flex;gap:10px;margin-top:8px;align-items:center;"><button type="button" class="ws-btn primary" id="reviewSubmit">Post review</button><button type="button" class="ws-btn" id="reviewCancel">Cancel</button><span id="reviewStatus" style="font-size:12.5px;"></span></div>
-                </div></div>
+                </div></dialog>
 
                 <script type="text/javascript">
                 (function () {
+                    // This dashboard's own root, found from this script: it sits inside the root on the
+                    // configuration page and next to it on the in-app page. Every lookup goes through it,
+                    // so the same ids elsewhere in the document (the admin settings page, which Jellyfin
+                    // keeps cached) can never be picked up instead of this page's own elements.
+                    var me = document.currentScript;
+                    var root = (me && (me.closest('#letterboxdUserPage') || (me.parentNode && me.parentNode.querySelector('#letterboxdUserPage')))) || document.getElementById('letterboxdUserPage');
+                    function byId(id) { return root.querySelector('#' + id); }
                     var U = {
-                        rootId: 'letterboxdUserPage',
-                        noActivityText: 'No activity yet. Link an account and start watching.',
-                        getJson: function (path) { return this.get(path).then(this.json); },
-                        postJson: function (path, body) { return this.post(path, body).then(function (r) { if (!r.ok) throw r; return r; }); },
-                        serverUrl: '', token: '', ovFilter: 'all', merged: [], lb: [], sz: [], editing: null,
+                        serverUrl: '', token: '', ovFilter: 'all', merged: [], seen: {}, lb: [], sz: [], editing: null,
                         reviewSvc: '', reviewTmdb: 0, reviewSlug: '',
+                        noActivityText: 'No activity yet. Link an account and start watching.', overviewWhat: 'your activity',
+                        retryable: ['loadOverview', 'loadAccounts'], modalIds: ['acctModal', 'reviewModal'], historyBodies: ['historyBody'],
                         resolveAuth: function () {
                             try { if (typeof ApiClient !== 'undefined') { this.serverUrl = ApiClient.serverAddress(); this.token = ApiClient.accessToken(); if (this.serverUrl && this.token) return true; } } catch (e) {}
                             try { var creds = JSON.parse(localStorage.getItem('jellyfin_credentials') || '{}'); var s = (creds.Servers || [])[0]; if (s) { this.serverUrl = s.ManualAddress || s.LocalAddress || ''; this.token = s.AccessToken || ''; return !!(this.serverUrl && this.token); } } catch (e) {}
@@ -142,13 +147,16 @@
                         post: function (path, body) { return fetch(this.serverUrl + '/' + path, { method: 'POST', headers: { 'Authorization': 'MediaBrowser Token="' + this.token + '"', 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }); },
                         put: function (path, body) { return fetch(this.serverUrl + '/' + path, { method: 'PUT', headers: { 'Authorization': 'MediaBrowser Token="' + this.token + '"', 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }); },
 
+                        getJson: function (path) { return this.get(path).then(this.json); },
                         init: function () {
                             var self = this;
                             // Removed before it finished starting (the in-app page was left): stop retrying.
-                            if (!document.getElementById('letterboxdUserPage')) return;
+                            if (!root || !root.isConnected) return;
                             self.ensureViewport();
+                            if (!self.themed) { self.themed = true; self.followTheme(); }
                             if (!self.resolveAuth()) { setTimeout(function () { self.init(); }, 400); return; }
-                            self.wire();
+                            self.wireBack();
+                            self.wireCommon();
                             self.loadOverview();
                             self.loadAccounts();
                             self.loadLibraries();
@@ -161,114 +169,83 @@
                             self.get('Jellyfin.Plugin.LetterboxdSync/Libraries').then(function (r) { return r.ok ? r.json() : null; })
                                 .then(function (d) { if (d) self.libraries = d.libraries || []; }).catch(function () { });
                         },
-                        wire: function () {
-                            var self = this, nav = document.getElementById('wsNav');
-                            nav.addEventListener('click', function (e) { var a = e.target.closest('a[data-sec]'); if (!a) return; nav.querySelectorAll('a').forEach(function (x) { x.classList.remove('active'); }); a.classList.add('active'); var sec = a.getAttribute('data-sec'); document.querySelectorAll('.ws-view').forEach(function (v) { v.classList.toggle('show', v.getAttribute('data-sec') === sec); }); });
-                            self.wireCommon(['historyBody']);
-                            document.getElementById('historyMore').addEventListener('click', function () { self.loadMore(); });
-                        },
-
-                        loadOverview: function () {
-                            var self = this, LB = 'Jellyfin.Plugin.LetterboxdSync', SZ = 'Jellyfin.Plugin.LetterboxdSync/Serializd';
-                            self.histSrc = { letterboxd: { base: LB, loaded: 0, total: 0 }, serializd: { base: SZ, loaded: 0, total: 0 } };
-                            Promise.all([self.get(LB + '/Stats').then(self.json), self.get(SZ + '/Stats').then(self.json), self.fetchHistory('letterboxd'), self.fetchHistory('serializd')])
-                                .then(function (res) {
-                                    var fs = res[0] || {}, ts = res[1] || {};
-                                    document.getElementById('statFilm').textContent = fs.total || 0;
-                                    document.getElementById('statTv').textContent = ts.total || 0;
-                                    var fw = fs.watchlist, tw = ts.watchlist;
-                                    document.getElementById('statWatchlist').textContent = (fw == null && tw == null) ? '—' : ((fw || 0) + (tw || 0));
-                                    document.getElementById('statWatchlistSub').textContent = (fw == null && tw == null) ? 'run a watchlist sync' : ((tw || 0) + ' shows · ' + (fw || 0) + ' films');
-                                    document.getElementById('statSynced').textContent = (fs.success || 0) + (ts.success || 0);
-                                    document.getElementById('statRewatches').textContent = (fs.rewatches || 0) + (ts.rewatches || 0);
-                                    document.getElementById('statFailed').textContent = (fs.failed || 0) + (ts.failed || 0);
-                                    self.merged = self.byNewest(res[2].concat(res[3]));
-                                    self.renderOverview();
-                                    self.renderSparks();
-                                    self.renderMore();
-                                }).catch(function () {
-                                    document.getElementById('historyBody').innerHTML = self.errorRow('your activity', 'loadOverview');
-                                    document.getElementById('historyPagination').style.display = 'none';
-                                    document.getElementById('historyMoreRow').style.display = 'none';
-                                });
-                        },
-                        // The History endpoints page by offset; Letterboxd caps a page at 200.
-                        histChunk: 200,
-                        byNewest: function (events) { return events.sort(function (a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); }); },
-                        fetchHistory: function (svc) {
-                            var self = this, h = self.histSrc[svc];
-                            return self.get(h.base + '/History?count=' + self.histChunk + '&offset=' + h.loaded).then(self.json).then(function (d) {
-                                var events = (d && d.events) || [];
-                                h.loaded += events.length;
-                                h.total = events.length ? Math.max((d && d.total) || 0, h.loaded) : h.loaded;
-                                return events.map(function (e) { e._svc = svc; return e; });
-                            });
-                        },
-                        renderMore: function () {
-                            var lb = this.histSrc.letterboxd, sz = this.histSrc.serializd;
-                            var more = lb.loaded < lb.total || sz.loaded < sz.total;
-                            document.getElementById('historyMoreRow').style.display = more ? 'flex' : 'none';
-                            document.getElementById('historyMoreInfo').textContent = (lb.loaded + sz.loaded) + ' of ' + (lb.total + sz.total) + ' loaded';
-                        },
-                        // ponytail: offset paging, so events logged between two loads can shift a row into
-                        // both pages and show it twice; dedupe on an event id if that ever bites.
-                        loadMore: function () {
-                            var self = this, btn = document.getElementById('historyMore'), jobs = [];
-                            Object.keys(self.histSrc).forEach(function (svc) {
-                                var h = self.histSrc[svc];
-                                if (h.loaded >= h.total) return;
-                                jobs.push(self.fetchHistory(svc).then(function (events) { self.merged = self.byNewest(self.merged.concat(events)); }));
-                            });
-                            btn.disabled = true;
-                            Promise.all(jobs).then(function () {
-                                btn.disabled = false; self.renderOverview(); self.renderMore();
-                            }, function () {
-                                btn.disabled = false; self.renderOverview(); self.renderMore();
-                                document.getElementById('historyMoreInfo').innerHTML = '<span class="ws-red">Couldn\'t load older history.</span>';
+                        libsFor: function (a) { return this.libsHtml((a && a.excludedLibraryIds) || []); },
+                        /* "Back to Jellyfin". Inside Jellyfin's web client it goes back to the page this one was
+                           opened from when the in-app page added its own history entry, and otherwise to Jellyfin's
+                           home through its router, so neither reloads the app. On its own (the configuration page
+                           opened directly) it opens Jellyfin's start page. Both keep the server's base URL. */
+                        wireBack: function () {
+                            var back = root.querySelector('.ws-back');
+                            var path = window.location.pathname, webAt = path.lastIndexOf('/web/');
+                            var base = webAt > 0 ? path.substring(0, webAt) : '';
+                            if (!/^(\/[A-Za-z0-9._~-]+)*$/.test(base)) base = '';
+                            var inJellyfin = !!root.closest('.mainAnimatedPages');
+                            back.href = inJellyfin ? path + window.location.search + '#/home' : base + '/web/';
+                            back.addEventListener('click', function (e) {
+                                if (inJellyfin && history.state && history.state.page === 'jellyscribe') { e.preventDefault(); history.back(); }
                             });
                         },
                         json: function (r) { if (!r.ok) throw r; return r.json(); },
+                        // For writes: success is the status alone, so a reply without a JSON body still counts as saved.
+                        ok: function (r) { if (!r.ok) throw r; return r; },
                         runSync: function () {
-                            var self = this, f = self.ovFilter; document.getElementById('syncStatus').textContent = '';
-                            self.startWatcher('Sync');
-                            var jobs = [];
-                            if (f === 'all' || f === 'serializd') jobs.push(self.post('Jellyfin.Plugin.LetterboxdSync/Serializd/SyncNow', {}).catch(function () {}));
-                            if (f === 'all' || f === 'letterboxd') jobs.push(self.post('Jellyfin.Plugin.LetterboxdSync/Sync', {}).catch(function () {}));
-                            Promise.all(jobs);
+                            var f = this.ovFilter, jobs = [];
+                            if (f === 'all' || f === 'serializd') jobs.push({ name: 'Serializd', path: 'Jellyfin.Plugin.LetterboxdSync/Serializd/SyncNow' });
+                            if (f === 'all' || f === 'letterboxd') jobs.push({ name: 'Letterboxd', path: 'Jellyfin.Plugin.LetterboxdSync/Sync' });
+                            this.startJobs('Sync', jobs);
                         },
                         runWatchlist: function () {
-                            var self = this, f = self.ovFilter; document.getElementById('syncStatus').textContent = '';
-                            self.startWatcher('Watchlist sync');
-                            var jobs = [];
-                            if (f === 'all' || f === 'serializd') jobs.push(self.post('Jellyfin.Plugin.LetterboxdSync/Serializd/SyncWatchlistNow', {}).catch(function () {}));
-                            if (f === 'all' || f === 'letterboxd') jobs.push(self.post('Jellyfin.Plugin.LetterboxdSync/SyncWatchlist', {}).catch(function () {}));
-                            Promise.all(jobs);
+                            var f = this.ovFilter, jobs = [];
+                            if (f === 'all' || f === 'serializd') jobs.push({ name: 'Serializd', path: 'Jellyfin.Plugin.LetterboxdSync/Serializd/SyncWatchlistNow' });
+                            if (f === 'all' || f === 'letterboxd') jobs.push({ name: 'Letterboxd', path: 'Jellyfin.Plugin.LetterboxdSync/SyncWatchlist' });
+                            this.startJobs('Watchlist sync', jobs);
                         },
-                        getProgress: function () { return this.get('Jellyfin.Plugin.LetterboxdSync/Progress').then(function (r) { return r.json(); }).catch(function () { return null; }); },
-
+                        // Starts each job, shows the server's reason for any it refused (no account, already
+                        // running), and watches progress only when at least one was accepted (202).
+                        startJobs: function (label, jobs) {
+                            var self = this, st = byId('syncStatus');
+                            st.textContent = 'Starting…';
+                            self.setSyncBusy(true);
+                            Promise.all(jobs.map(function (j) {
+                                var name = jobs.length > 1 ? j.name + ': ' : '';
+                                return self.post(j.path, {}).then(function (r) {
+                                    if (r.status === 202) return { ok: true };
+                                    return self.errText(r).then(function (msg) { return { ok: false, msg: name + msg }; });
+                                }, function () { return { ok: false, msg: name + 'couldn\'t reach the server.' }; });
+                            })).then(function (res) {
+                                var errors = res.filter(function (x) { return !x.ok; }).map(function (x) { return x.msg; });
+                                st.innerHTML = errors.length ? '<span class="ws-red">' + self.esc(errors.join(' · ')) + '</span>' : '';
+                                if (res.some(function (x) { return x.ok; })) self.startWatcher(label); else self.setSyncBusy(false);
+                            });
+                        },
                         /* ===== Accounts ===== */
                         loadAccounts: function () {
                             var self = this;
                             Promise.all([self.get('Jellyfin.Plugin.LetterboxdSync/Accounts').then(self.json),
                                 self.get('Jellyfin.Plugin.LetterboxdSync/Serializd/Accounts').then(self.json)])
-                                .then(function (res) { self.lb = (res[0] && res[0].accounts) || []; self.sz = (res[1] && res[1].accounts) || []; self.renderAccounts(); })
+                                .then(function (res) {
+                                    self.lb = (res[0] && res[0].accounts) || []; self.sz = (res[1] && res[1].accounts) || [];
+                                    // Watchlist collections and playlists are named by an admin; the server keeps the stored name for anyone else.
+                                    self.canSetWatchlistName = !!((res[0] && res[0].canSetWatchlistName) || (res[1] && res[1].canSetWatchlistName));
+                                    self.renderAccounts();
+                                })
                                 // Never render the add card on a failed load: saving from an empty list would overwrite the stored accounts.
-                                .catch(function () { document.getElementById('acctGrid').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('your accounts', 'loadAccounts') + '</div>'; });
+                                .catch(function () { byId('acctGrid').innerHTML = '<div class="ws-panel" style="padding:2em;text-align:center;">' + self.errorHtml('your accounts', 'loadAccounts') + '</div>'; });
                         },
                         renderAccounts: function () {
                             var self = this, cards = '';
-                            var cnt = (self.sz.length + self.lb.length); document.getElementById('acctCount').textContent = cnt || '';
+                            var cnt = (self.sz.length + self.lb.length); byId('acctCount').textContent = cnt || '';
                             self.sz.forEach(function (a, i) { cards += self.card('serializd', a, i); });
                             self.lb.forEach(function (a, i) { cards += self.card('letterboxd', a, i); });
                             cards += '<button type="button" class="ws-add" onclick="WSU.openAccount(null)"><span class="plus">+</span>Link a diary<span class="ws-label">Film or TV</span></button>';
-                            document.getElementById('acctGrid').innerHTML = cards;
+                            byId('acctGrid').innerHTML = cards;
                         },
                         card: function (svc, a, i) {
                             var self = this, uname = svc === 'serializd' ? (a.email || '?') : (a.letterboxdUsername || '?');
                             var feats = svc === 'serializd'
                                 ? [['Favourites', a.syncFavorites], ['Watchlist', a.syncWatchlist], ['Seerr', a.autoRequestWatchlist], ['Import', a.enableDiaryImport]]
                                 : [['Favourites', a.syncFavorites], ['Watchlist', a.enableWatchlistSync], ['Seerr', a.autoRequestWatchlist], ['Cookies', !!a.hasCookies]];
-                            var chips = feats.map(function (f) { return self.featChip(f[0], f[1]); }).join('');
+                            var chips = feats.map(function (f) { return self.feat(f[0], f[1]); }).join('');
                             return '<div class="ws-acct ' + (svc === 'serializd' ? 'tv' : 'film') + '"><div class="top"><span class="ws-badge ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'TV' : 'MV') + '</span><div style="min-width:0;"><div class="u" title="' + self.esc(uname) + '">' + self.esc(uname) + '</div><div class="svc ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'Serializd · TV' : 'Letterboxd · Film') + '</div></div>' + (a.isPrimary ? '<span class="ws-prim">Primary</span>' : '') + '</div><div class="ws-featchips">' + chips + '</div><div class="foot"><span class="st">' + (a.authPaused ? '<span class="ws-red" title="Letterboxd login has been failing since ' + self.esc(a.authPausedSince ? self.formatDate(a.authPausedSince) : '?') + '. Re-save this account\'s credentials to resume syncing.">Login failing · sync paused</span>' : (a.enabled !== false ? '<span class="ws-green">Enabled</span>' : '<span class="ws-muted">Paused</span>')) + '</span><button type="button" class="ws-linkbtn" onclick="WSU.openAccount({svc:\'' + svc + '\',i:' + i + '})">Edit ›</button></div></div>';
                         },
                         checksFor: function (svc, a) {
@@ -284,7 +261,7 @@
                                 ['Only sync recently played', 'chkDate', !!a.enableDateFilter, 'Limit the catch-up to the last N days.']
                             ];
                             var watch = [
-                                ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.syncWatchlist : !!a.enableWatchlistSync, 'Watchlist → Jellyfin ' + (svc === 'serializd' ? 'collection + playlist.' : 'playlist.')],
+                                ['Sync watchlist to library', 'chkWatch', svc === 'serializd' ? !!a.syncWatchlist : !!a.enableWatchlistSync, this.watchDesc(svc)],
                                 ['Auto-request via Seerr', 'chkSeerr', !!a.autoRequestWatchlist, 'Missing from the library → request via Seerr.'],
                                 ['Mirror watchlist to Seerr', 'chkMirror', !!a.mirrorJellyseerrWatchlist, 'Push this watchlist into your Seerr watchlist (primary account only).']
                             ];
@@ -293,97 +270,99 @@
                                 ['Stop on first failure', 'chkStop', !!a.stopOnFailure, 'Halt on the first error.'],
                                 ['Backfill Seerr requests', 'chkBackfill', !!a.backfillAvailableRequests, 'Also attribute a Seerr request for already-available titles.']
                             ];
-                            var html = function (rows) {
-                                return rows.map(function (r) { return '<label><input type="checkbox" id="' + r[1] + '"' + (r[2] ? ' checked' : '') + ' /><span>' + r[0] + '<span class="desc">' + r[3] + '</span></span></label>'; }).join('');
-                            };
-                            return '<div class="ws-label">Sync</div>' + html(sync) +
-                                '<div class="ws-row" id="dateDaysRow" style="display:' + (a.enableDateFilter ? 'block' : 'none') + ';margin-top:4px;"><label class="ws-field">Days to look back</label><input type="number" class="ws-input" id="chkDateDays" min="1" max="365" value="' + (a.dateFilterDays || 7) + '" /></div>' +
-                                '<div class="ws-label">Watchlist &amp; Seerr</div>' + html(watch) +
-                                '<details class="ws-adv"><summary class="ws-label">Advanced</summary><div class="ws-checks">' + html(advanced) + '</div></details>';
+                            return this.checksHtml({ sync: sync, watch: watch, advanced: advanced }, a.enableDateFilter, a.dateFilterDays);
                         },
+                        // The one toggle whose wording depends on the service; onSvcChange keeps it in step.
+                        watchDesc: function (svc) { return 'Watchlist → Jellyfin ' + (svc === 'serializd' ? 'collection + playlist. Everyone who can see those shows can see the collection.' : 'playlist.'); },
                         openAccount: function (ref) {
                             var self = this, svc = ref ? ref.svc : 'serializd', a = null;
                             if (ref) a = (svc === 'serializd' ? self.sz : self.lb)[ref.i];
                             self.editing = ref ? { svc: svc, i: ref.i } : null;
-                            document.getElementById('acctModalTitle').textContent = a ? 'Edit account' : 'Link a diary';
-                            document.getElementById('mSvc').value = svc; document.getElementById('mSvc').disabled = !!a;
-                            document.getElementById('mUsername').value = a ? (svc === 'serializd' ? a.email : a.letterboxdUsername) : '';
-                            self.fillSecret('mPassword', !!(a && a.hasPassword));
-                            self.fillSecret('mAuthBlob', !!(a && a.hasCookies));
-                            document.getElementById('mAuthBlobClear').checked = false;
-                            document.getElementById('mAuthBlobClearRow').style.display = a && a.hasCookies ? 'block' : 'none';
-                            document.getElementById('mUserAgent').value = (a && a.userAgent) || '';
-                            document.getElementById('mWatchName').value = (a && (svc === 'serializd' ? a.watchlistName : a.playlistName)) || '';
-                            document.getElementById('mVerifyStatus').textContent = ''; document.getElementById('mStatus').textContent = '';
-                            document.getElementById('mDeleteBtn').style.display = a ? '' : 'none';
-                            document.getElementById('mChecks').innerHTML = self.checksFor(svc, a);
-                            document.getElementById('mLibs').innerHTML = self.libsFor((a && a.excludedLibraryIds) || []);
-                            document.getElementById('mLibRow').style.display = (self.libraries || []).length ? 'block' : 'none';
-                            document.getElementById('chkDate').addEventListener('change', function () { document.getElementById('dateDaysRow').style.display = this.checked ? 'block' : 'none'; });
+                            byId('acctModalTitle').textContent = a ? 'Edit account' : 'Link a diary';
+                            byId('mSvc').value = svc; byId('mSvc').disabled = !!a;
+                            byId('mUsername').value = a ? (svc === 'serializd' ? a.email : a.letterboxdUsername) : '';
+                            // Saved secrets never come back from the server (only has* flags): blank keeps them, typing replaces them.
+                            self.fillSecret('mPassword', !!(a && a.hasPassword), 'Leave blank to keep the saved password', '');
+                            self.fillSecret('mAuthBlob', !!(a && a.hasCookies), 'Leave blank to keep the saved cookies', 'From a signed-in browser (incl. cf_clearance)');
+                            byId('mUserAgent').value = (a && a.userAgent) || '';
+                            byId('mWatchName').value = (a && (svc === 'serializd' ? a.watchlistName : a.playlistName)) || '';
+                            byId('mWatchNameRow').style.display = self.canSetWatchlistName ? '' : 'none';
+                            byId('mVerifyStatus').textContent = ''; byId('mStatus').textContent = '';
+                            byId('mDeleteBtn').style.display = a ? '' : 'none';
+                            byId('mConfirmRow').style.display = 'none';
+                            this.setModalBusy(false);
+                            byId('mChecks').innerHTML = self.checksFor(svc, a);
+                            byId('mLibs').innerHTML = self.libsFor(a);
+                            byId('mLibRow').style.display = (self.libraries || []).length ? 'block' : 'none';
+                            byId('chkDate').addEventListener('change', function () { byId('dateDaysRow').style.display = this.checked ? 'block' : 'none'; });
                             self.onSvcChange();
-                            document.getElementById('acctModal').classList.add('show');
+                            self.openModal('acctModal');
                         },
                         saveAccount: function () {
                             var self = this, m = self.collectModal();
-                            if (!m.username) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Username/email is required.</span>'; return; }
-                            if (m.svc === 'letterboxd' && m.username.indexOf('@') >= 0) { document.getElementById('mStatus').innerHTML = '<span class="ws-red">Letterboxd no longer accepts an email address to sign in. Use your Letterboxd username, the name in letterboxd.com/&lt;username&gt;/.</span>'; return; }
+                            if (!self.validAccountForm(m) || self.modalBusy) return;
+                            byId('mStatus').textContent = 'Saving…';
                             var orig = self.editing ? (m.svc === 'serializd' ? self.sz : self.lb)[self.editing.i] : null;
-                            if (self.renamedWithoutPassword(m, orig && (m.svc === 'serializd' ? orig.email : orig.letterboxdUsername), !!(orig && orig.hasPassword))) { document.getElementById('mStatus').innerHTML = self.renamedMessage; return; }
-                            document.getElementById('mStatus').textContent = 'Saving…';
-                            var prevLb = self.lb.slice(), prevSz = self.sz.slice();
+                            // The new list is built from a copy, so a failed save leaves the loaded list as it was
+                            // and pressing Save again cannot add the account twice.
+                            var list = (m.svc === 'serializd' ? self.sz : self.lb).slice();
                             self.setModalBusy(true);
                             var excludedLibs = self.mergeExcluded((orig && orig.excludedLibraryIds) || [], m.libs);
                             if (m.svc === 'serializd') {
-                                var item = { email: m.username, password: m.password, enabled: m.enabled, syncFavorites: m.fav, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, syncWatchlist: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, watchlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
-                                if (self.editing) self.sz[self.editing.i] = item; else self.sz.push(item);
-                                self.put('Jellyfin.Plugin.LetterboxdSync/Serializd/Accounts', { accounts: self.sz }).then(self.json).then(function () { self.afterSave(); }, function (err) { self.sz = prevSz; self.afterSave(err); });
+                                // original* names the login this edit started from, so its saved password follows a changed email.
+                                var item = { email: m.username, originalEmail: orig ? orig.email : null, password: m.password, enabled: m.enabled, syncFavorites: m.fav, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, syncWatchlist: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, watchlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
+                                if (self.editing) list[self.editing.i] = item; else list.push(item);
+                                self.put('Jellyfin.Plugin.LetterboxdSync/Serializd/Accounts', { accounts: list }).then(self.ok).then(function () { self.afterSave(); }, function (err) { self.afterSave(err); });
                             } else {
-                                var itemL = { letterboxdUsername: m.username, letterboxdPassword: m.password, rawCookies: m.cookies || null, clearRawCookies: m.clearCookies, userAgent: m.userAgent || null, enabled: m.enabled, syncFavorites: m.fav, syncRatings: m.ratings, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, enableWatchlistSync: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, playlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
-                                if (self.editing) self.lb[self.editing.i] = itemL; else self.lb.push(itemL);
-                                self.put('Jellyfin.Plugin.LetterboxdSync/Accounts', { accounts: self.lb }).then(self.json).then(function () { self.afterSave(); }, function (err) { self.lb = prevLb; self.afterSave(err); });
+                                var itemL = { letterboxdUsername: m.username, originalLetterboxdUsername: orig ? orig.letterboxdUsername : null, letterboxdPassword: m.password, rawCookies: m.cookies || null, clearRawCookies: !m.cookies && m.clearCookies, userAgent: m.userAgent || null, enabled: m.enabled, syncFavorites: m.fav, syncRatings: m.ratings, enableDateFilter: m.date, dateFilterDays: m.days, isPrimary: m.primary, enableWatchlistSync: m.watch, autoRequestWatchlist: m.seerr, backfillAvailableRequests: m.backfill, mirrorJellyseerrWatchlist: m.mirror, playlistName: m.watchName || null, skipPreviouslySynced: m.skip, stopOnFailure: m.stop, enableDiaryImport: m.imp, excludedLibraryIds: excludedLibs };
+                                if (self.editing) list[self.editing.i] = itemL; else list.push(itemL);
+                                self.put('Jellyfin.Plugin.LetterboxdSync/Accounts', { accounts: list }).then(self.ok).then(function () { self.afterSave(); }, function (err) { self.afterSave(err); });
                             }
                         },
-                        afterSave: function (err) {
+                        afterSave: function (err, failedWhat, doneText) {
                             var self = this;
                             self.setModalBusy(false);
-                            if (err) { self.saveFailed(err); return; }
-                            // Reload rather than keep the sent rows: they hold what was typed, not the saved flags.
-                            document.getElementById('acctModal').classList.remove('show'); self.loadAccounts(); document.getElementById('saveStatus').innerHTML = '<span class="ws-green">Saved.</span>';
+                            if (err) { self.saveFailed(err, null, failedWhat); return; }
+                            // Reload after a save: the list must match what the server stored, and must not keep a typed secret.
+                            self.loadAccounts();
+                            self.closeModal('acctModal'); byId('saveStatus').innerHTML = '<span class="ws-green">' + (doneText || 'Saved.') + '</span>';
                         },
+                        // Runs from the confirm step's "Yes, remove"; the account leaves the list only once the server has removed it.
                         deleteAccount: function () {
-                            var self = this; if (!self.editing) return;
-                            if (!confirm('Remove this account?')) return;
-                            var tv = self.editing.svc === 'serializd', prev = (tv ? self.sz : self.lb).slice();
-                            (tv ? self.sz : self.lb).splice(self.editing.i, 1);
-                            document.getElementById('mStatus').textContent = 'Removing…';
+                            var self = this; if (!self.editing || self.modalBusy) return;
+                            var tv = self.editing.svc === 'serializd', list = (tv ? self.sz : self.lb).slice();
+                            list.splice(self.editing.i, 1);
+                            byId('mStatus').textContent = 'Removing…';
                             self.setModalBusy(true);
-                            self.put(tv ? 'Jellyfin.Plugin.LetterboxdSync/Serializd/Accounts' : 'Jellyfin.Plugin.LetterboxdSync/Accounts', { accounts: tv ? self.sz : self.lb })
-                                .then(self.json).then(function () { self.afterSave(); }, function (err) { if (tv) self.sz = prev; else self.lb = prev; self.afterSave(err); });
+                            self.put(tv ? 'Jellyfin.Plugin.LetterboxdSync/Serializd/Accounts' : 'Jellyfin.Plugin.LetterboxdSync/Accounts', { accounts: list })
+                                .then(self.ok).then(function () { self.afterSave(null, null, 'Removed.'); }, function (err) { self.afterSave(err, 'Remove failed'); });
                         },
                         verifyAccount: function () {
-                            var self = this, svc = document.getElementById('mSvc').value, st = document.getElementById('mVerifyStatus');
-                            var orig = self.editing ? (svc === 'serializd' ? self.sz : self.lb)[self.editing.i] : null;
-                            // An empty password field verifies the saved one, which the server looks up by username.
-                            var saved = function (name) { return !!(orig && orig.hasPassword) && String((svc === 'serializd' ? orig.email : orig.letterboxdUsername) || '').toLowerCase() === name.toLowerCase(); };
+                            var self = this, svc = byId('mSvc').value, st = byId('mVerifyStatus');
+                            // A blank password checks the saved one: the server looks it up for the account being
+                            // edited (by the login it started from), so it never comes back to the browser.
+                            var orig = self.editing ? (self.editing.svc === 'serializd' ? self.sz : self.lb)[self.editing.i] : null;
                             if (svc === 'letterboxd') {
-                                var lbUser = document.getElementById('mUsername').value.trim(), lbPw = document.getElementById('mPassword').value;
-                                if (!lbUser || (!lbPw && !saved(lbUser))) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
+                                var lbUser = byId('mUsername').value.trim(), lbPw = byId('mPassword').value;
+                                if (!lbUser || (!lbPw && !(orig && orig.hasPassword))) { st.innerHTML = '<span class="ws-red">Username and password required.</span>'; return; }
                                 st.innerHTML = '<span class="ws-muted">Verifying… (can take a few seconds)</span>';
-                                self.post('Jellyfin.Plugin.LetterboxdSync/Verify', { letterboxdUsername: lbUser, letterboxdPassword: lbPw, rawCookies: document.getElementById('mAuthBlob').value || null, clearRawCookies: document.getElementById('mAuthBlobClear').checked, userAgent: document.getElementById('mUserAgent').value.trim() || null })
-                                    .then(function (r) { r.json().then(function (d) { st.innerHTML = self.verifyMessage(r.ok, d); }, function () { st.innerHTML = self.verifyMessage(r.ok, null); }); });
+                                self.post('Jellyfin.Plugin.LetterboxdSync/Verify', { letterboxdUsername: lbUser, letterboxdPassword: lbPw || null, rawCookies: byId('mAuthBlob').value || null, clearRawCookies: byId('mAuthBlobClear').checked, userAgent: byId('mUserAgent').value.trim() || null, originalLetterboxdUsername: orig ? orig.letterboxdUsername : null })
+                                    .then(function (r) { r.json().then(function (d) { st.innerHTML = self.verifyMessage(r.ok, d); }, function () { st.innerHTML = self.verifyMessage(r.ok, null); }); },
+                                        function () { st.innerHTML = self.unreachable(); });
                                 return;
                             }
-                            var email = document.getElementById('mUsername').value.trim(), pw = document.getElementById('mPassword').value;
-                            if (!email || (!pw && !saved(email))) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
+                            var email = byId('mUsername').value.trim(), pw = byId('mPassword').value;
+                            if (!email || (!pw && !(orig && orig.hasPassword))) { st.innerHTML = '<span class="ws-red">Email and password required.</span>'; return; }
                             st.innerHTML = '<span class="ws-muted">Verifying…</span>';
-                            this.post('Jellyfin.Plugin.LetterboxdSync/Serializd/Verify', { email: email, password: pw }).then(function (r) { if (r.ok) { r.json().then(function (d) { st.innerHTML = '<span class="ws-green">Login OK' + (d.username ? ' (' + self.esc(d.username) + ')' : '') + '.</span>'; }); } else { st.innerHTML = '<span class="ws-red">Login failed.</span>'; } });
+                            this.post('Jellyfin.Plugin.LetterboxdSync/Serializd/Verify', { email: email, password: pw || null, originalEmail: orig ? orig.email : null }).then(function (r) { if (r.ok) { r.json().then(function (d) { st.innerHTML = '<span class="ws-green">Login OK' + (d.username ? ' (' + self.esc(d.username) + ')' : '') + '.</span>'; }, function () { st.innerHTML = '<span class="ws-green">Login OK.</span>'; }); } else if (r.status === 429) { r.json().then(function (d) { st.innerHTML = '<span class="ws-red">' + self.esc(d.error) + '</span>'; }, function () { st.innerHTML = '<span class="ws-red">Too many login checks. Try again later.</span>'; }); } else { st.innerHTML = '<span class="ws-red">Login failed.</span>'; } }, function () { st.innerHTML = self.unreachable(); });
                         },
-
+                        // Where each dialog gives focus back when it closes (openModal, in jellyscribe.js).
+                        returnFocus: {},
                         // Uses the accounts already loaded by loadAccounts (self-service; the
                         // /Accounts endpoint only ever returns the calling user's own accounts),
                         // so no extra request is needed here.
                         populateReviewAccountDropdown: function () {
-                            var self = this, sel = document.getElementById('reviewAccount'), row = document.getElementById('reviewAccountRow');
+                            var self = this, sel = byId('reviewAccount'), row = byId('reviewAccountRow');
                             if (!sel || !row) return;
                             sel.innerHTML = '<option value="">All my Letterboxd accounts</option>';
                             var mine = (this.lb || []).filter(function (a) { return a.enabled !== false; });
@@ -395,42 +374,55 @@
                             row.style.display = mine.length >= 2 ? '' : 'none';
                         }
                     };
-
-                    // Shared styles and helpers (jellyscribe.css/.js, served by SidebarController). The page
-                    // stays hidden until both are in, so it never shows unstyled.
-                    var root = document.getElementById('letterboxdUserPage');
-                    var assetUrl = function (file) {
-                        var path = 'LetterboxdSync/Web/' + file;
-                        if (window.ApiClient && ApiClient.getUrl) return ApiClient.getUrl(path);
-                        var at = location.pathname.lastIndexOf('/web/');
-                        return (at > 0 ? location.pathname.substring(0, at) : '') + '/' + path;
-                    };
-                    var sharedAsset = function (tag, file) {
-                        var el = document.getElementById('jellyscribe-' + tag);
-                        if (el && el.getAttribute('data-loaded')) return Promise.resolve();
+                    /* Loads this build's shared stylesheet and script (jellyscribe.css and jellyscribe.js), then
+                       starts the page, which stays hidden until both are in. The version is stamped in at build
+                       time; it is in each URL and in the key a loaded copy is reused by, and the shared script
+                       registers itself under it, so a page served after an upgrade never runs against an older
+                       copy still loaded in this tab. */
+                    var V = '@@JELLYSCRIBE_VERSION@@';
+                    function sharedAsset(tag, file) {
+                        var key = tag + '[data-jellyscribe="' + file + '"]', el = document.head.querySelector(key + '[data-v="' + V + '"]');
+                        if (el && el.hasAttribute('data-loaded')) return Promise.resolve();
+                        if (!el) {
+                            var path = 'LetterboxdSync/Web/' + file;
+                            // Through Jellyfin's client, so a server under a base URL works; else relative to /web/.
+                            var url = window.ApiClient && ApiClient.getUrl ? ApiClient.getUrl(path, { v: V }) : '../' + path + '?v=' + encodeURIComponent(V);
+                            el = document.createElement(tag);
+                            el.setAttribute('data-jellyscribe', file);
+                            el.setAttribute('data-v', V);
+                            if (tag === 'link') { el.rel = 'stylesheet'; el.href = url; } else el.src = url;
+                            el.addEventListener('load', function () {
+                                el.setAttribute('data-loaded', '');
+                                // Another build's copy (from before an upgrade) is no longer needed.
+                                Array.prototype.forEach.call(document.head.querySelectorAll(key), function (old) { if (old !== el) old.remove(); });
+                            }, { once: true });
+                            el.addEventListener('error', function () { el.remove(); }, { once: true });
+                            document.head.appendChild(el);
+                        }
                         return new Promise(function (resolve, reject) {
-                            if (!el) {
-                                el = document.createElement(tag);
-                                el.id = 'jellyscribe-' + tag;
-                                if (tag === 'link') { el.rel = 'stylesheet'; el.href = assetUrl(file); } else el.src = assetUrl(file);
-                                document.head.appendChild(el);
-                            }
-                            el.addEventListener('load', function () { el.setAttribute('data-loaded', 'true'); resolve(); });
-                            el.addEventListener('error', function () { if (el.parentNode) el.parentNode.removeChild(el); reject(new Error(file)); });
+                            var done = function (e) {
+                                el.removeEventListener('load', done); el.removeEventListener('error', done);
+                                if (e.type === 'load') resolve(); else reject(new Error(file));
+                            };
+                            el.addEventListener('load', done); el.addEventListener('error', done);
                         });
-                    };
+                    }
+                    function failed() {
+                        if (!root.isConnected) return;
+                        root.style.visibility = '';
+                        root.innerHTML = '<p style="padding:2em;">Couldn\'t load the Jellyscribe page. Reload to try again.</p>';
+                    }
+                    if (!root) return;
                     Promise.all([sharedAsset('link', 'jellyscribe.css'), sharedAsset('script', 'jellyscribe.js')]).then(function () {
-                        // Left (or re-opened) while loading: this copy of the page is gone.
-                        if (!document.documentElement.contains(root)) return;
-                        var shared = window.JellyscribeShared;
+                        if (!root.isConnected) return; // left while loading
+                        var make = window.JellyscribeShared && window.JellyscribeShared[V];
+                        if (typeof make !== 'function') { failed(); return; }
+                        var shared = make(root);
                         Object.keys(shared).forEach(function (k) { if (!(k in U)) U[k] = shared[k]; });
                         root.style.visibility = '';
                         window.WSU = U;
                         U.init();
-                    }, function () {
-                        root.style.visibility = '';
-                        root.innerHTML = '<p style="padding:2em;">Couldn\'t load the Jellyscribe page. Reload to try again.</p>';
-                    });
+                    }, failed);
                 })();
                 </script>
             </div>

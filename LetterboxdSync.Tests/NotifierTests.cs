@@ -219,7 +219,7 @@ public class NotifierTests : IDisposable
         var (_, userId) = SetUpUserWithPlayedMovie();
         var service = Substitute.For<ILetterboxdService>();
         service.LookupFilmByTmdbIdAsync(Arg.Any<int>())
-            .Returns<Task<FilmResult>>(_ => throw new InvalidOperationException("film not found"));
+            .Returns<Task<FilmResult>>(_ => throw new FilmNotFoundException(0, "film not found"));
         LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
 
         for (var run = 1; run <= LetterboxdSyncRunner.MaxConsecutiveSyncFailures + 1; run++)

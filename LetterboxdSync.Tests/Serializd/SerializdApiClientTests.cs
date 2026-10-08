@@ -17,7 +17,7 @@ public class SerializdApiClientTests
         NullLoggerFactory.Instance.CreateLogger("test");
 
     private const string ShowJson =
-        "{\"seasons\":[{\"id\":3577,\"seasonNumber\":0},{\"id\":3572,\"seasonNumber\":1},{\"id\":3573,\"seasonNumber\":2}]}";
+        "{\"seasons\":[{\"id\":3577,\"seasonNumber\":0},{\"id\":3572,\"seasonNumber\":1,\"episodeCount\":7},{\"id\":3573,\"seasonNumber\":2}]}";
 
     private static HttpResponseMessage Json(HttpStatusCode code, string body)
         => new(code) { Content = new StringContent(body) };
@@ -51,6 +51,23 @@ public class SerializdApiClientTests
     }
 
     [Fact]
+    public async Task Authenticate_NamesTheAccountByTag_NeverByEmail()
+    {
+        var handler = new ApiMockHandler(req => req.RequestUri!.AbsolutePath.EndsWith("/login")
+            ? Json(HttpStatusCode.OK, "{\"username\":\"demo-bingewatcher\",\"token\":\"tok\"}")
+            : Json(HttpStatusCode.OK, "{}"));
+        var logger = new ListLogger();
+
+        using (var first = new SerializdApiClient(logger, handler)) await first.AuthenticateAsync("demo@example.com", "pw");
+        using (var cached = new SerializdApiClient(logger, handler)) await cached.AuthenticateAsync("demo@example.com", "pw");
+
+        var tag = LogRedaction.AccountTag("demo@example.com");
+        Assert.Contains(logger.Entries, e => e.Message == "Authenticated with Serializd as " + tag);
+        Assert.Contains(logger.Entries, e => e.Message == "Reusing cached Serializd token for " + tag);
+        Assert.DoesNotContain(logger.Entries, e => e.Message.Contains("demo@example.com"));
+    }
+
+    [Fact]
     public async Task Authenticate_SameEmailWrongPassword_DoesNotReuseCachedToken()
     {
         var logins = new List<string>();
@@ -69,7 +86,8 @@ public class SerializdApiClientTests
         await owner.AuthenticateAsync("isolation@example.com", "right");
 
         using var attacker = new SerializdApiClient(Log, handler);
-        await Assert.ThrowsAsync<SerializdAuthException>(() => attacker.AuthenticateAsync("isolation@example.com", "wrong"));
+        var rejected = await Assert.ThrowsAnyAsync<Exception>(() => attacker.AuthenticateAsync("isolation@example.com", "wrong"));
+        Assert.Contains("(401)", rejected.Message);
 
         using var ownerAgain = new SerializdApiClient(Log, handler);
         await ownerAgain.AuthenticateAsync("isolation@example.com", "right");
@@ -107,6 +125,32 @@ public class SerializdApiClientTests
         Assert.Equal(3572, await client.ResolveSeasonIdAsync(1396, 1));
         Assert.Equal(3577, await client.ResolveSeasonIdAsync(1396, 0)); // specials
         Assert.Null(await client.ResolveSeasonIdAsync(1396, 99));       // no such season
+    }
+
+    [Fact]
+    public async Task GetSeasonEpisodeCount_ReadsTheShowOnce_NullWithoutACount()
+    {
+        var showFetches = 0;
+        var handler = new ApiMockHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
+            if (req.RequestUri.AbsolutePath.Contains("/show/1396"))
+            {
+                showFetches++;
+                return Json(HttpStatusCode.OK, ShowJson);
+            }
+            return Json(HttpStatusCode.NotFound, "{}");
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        Assert.Equal(3572, await client.ResolveSeasonIdAsync(1396, 1));
+        Assert.Equal(7, await client.GetSeasonEpisodeCountAsync(1396, 1));
+        Assert.Null(await client.GetSeasonEpisodeCountAsync(1396, 2));  // no episodeCount
+        Assert.Null(await client.GetSeasonEpisodeCountAsync(1396, 99)); // no such season
+        Assert.Equal(1, showFetches);
     }
 
     [Fact]
@@ -380,6 +424,98 @@ public class SerializdApiClientTests
         Assert.Empty(whole.SeasonNumbers);                          // no seasonIds → whole show
     }
 
+    [Theory]
+    [InlineData("error")]
+    [InlineData("empty")]
+    [InlineData("noitems")]
+    public async Task GetWatchlist_LaterPageCannotBeRead_Throws(string failure)
+    {
+        var handler = new ApiMockHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"8bitproxy\",\"token\":\"t\"}");
+            if (path.Contains("/watchlistpage_v2/1"))
+                return Json(HttpStatusCode.OK, "{\"totalPages\":2,\"items\":[{\"showId\":206828,\"seasonIds\":[]}]}");
+            if (path.Contains("/watchlistpage_v2/2"))
+                return failure switch
+                {
+                    "error" => Json(HttpStatusCode.BadGateway, "{}"),
+                    "empty" => Json(HttpStatusCode.OK, "{\"totalPages\":2,\"items\":[]}"),
+                    _ => Json(HttpStatusCode.OK, "{\"totalPages\":2}"),
+                };
+            return Json(HttpStatusCode.OK, "{\"seasons\":[]}");
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        // A short list would make the watchlist sync remove every show on page two.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetWatchlistAsync());
+    }
+
+    [Theory]
+    [InlineData("{\"totalPages\":0}")]
+    [InlineData("{}")]
+    public async Task GetWatchlist_EmptyFirstPageWithoutItems_ReturnsEmpty(string body)
+    {
+        var handler = new ApiMockHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"8bitproxy\",\"token\":\"t\"}");
+            return Json(HttpStatusCode.OK, body);
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        Assert.Empty(await client.GetWatchlistAsync());
+    }
+
+    [Fact]
+    public async Task GetWatchlist_MultiplePages_StopsAtTotalPages()
+    {
+        var pagesRead = new List<string>();
+        var handler = new ApiMockHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"8bitproxy\",\"token\":\"t\"}");
+            if (path.Contains("/watchlistpage_v2/"))
+            {
+                lock (pagesRead) pagesRead.Add(path);
+                var show = path.EndsWith("/1") ? 206828 : 136315;
+                return Json(HttpStatusCode.OK, $"{{\"totalPages\":2,\"items\":[{{\"showId\":{show},\"seasonIds\":[]}}]}}");
+            }
+            return Json(HttpStatusCode.OK, "{\"seasons\":[]}");
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        var entries = await client.GetWatchlistAsync();
+
+        Assert.Equal(new[] { 206828, 136315 }, entries.Select(e => e.ShowTmdbId).ToArray());
+        Assert.Equal(2, pagesRead.Count);
+    }
+
+    [Fact]
+    public async Task GetWatchlist_EmptyWatchlist_ReturnsEmpty()
+    {
+        var handler = new ApiMockHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"8bitproxy\",\"token\":\"t\"}");
+            return Json(HttpStatusCode.OK, "{\"totalPages\":0,\"items\":[]}");
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        Assert.Empty(await client.GetWatchlistAsync());
+    }
+
     [Fact]
     public async Task ExpiredToken_ReAuthenticatesAndRetries()
     {
@@ -457,7 +593,7 @@ public class SerializdApiClientTests
 
         // 500s exhaust the built-in retry (fast: SerializdApiConstants backoff is short in tests
         // only in that it's bounded, not mocked away), then the failure surfaces as an exception.
-        var ex = await Assert.ThrowsAsync<Exception>(() => client.ResolveSeasonIdAsync(1396, 1));
+        var ex = await Assert.ThrowsAsync<SerializdRequestException>(() => client.ResolveSeasonIdAsync(1396, 1));
         Assert.Contains("get-show", ex.Message);
     }
 
@@ -474,7 +610,7 @@ public class SerializdApiClientTests
         using var client = new SerializdApiClient(Log, handler);
         await client.AuthenticateAsync("me@example.com", "pw");
 
-        var ex = await Assert.ThrowsAsync<Exception>(() =>
+        var ex = await Assert.ThrowsAsync<SerializdRequestException>(() =>
             client.CreateEpisodeLogAsync(1396, 3572, 1, DateTime.UtcNow, rating: null, isRewatch: false));
         Assert.Contains("/show/reviews/add", ex.Message);
     }
@@ -492,7 +628,7 @@ public class SerializdApiClientTests
         using var client = new SerializdApiClient(Log, handler);
         await client.AuthenticateAsync("me@example.com", "pw");
 
-        var ex = await Assert.ThrowsAsync<Exception>(() => client.LogEpisodesAsync(1396, 3572, new[] { 1 }));
+        var ex = await Assert.ThrowsAsync<SerializdRequestException>(() => client.LogEpisodesAsync(1396, 3572, new[] { 1 }));
         Assert.Contains("/episode_log/add", ex.Message);
     }
 
@@ -509,7 +645,7 @@ public class SerializdApiClientTests
         using var client = new SerializdApiClient(Log, handler);
         await client.AuthenticateAsync("me@example.com", "pw");
 
-        var ex = await Assert.ThrowsAsync<Exception>(() => client.SetShowMetaAsync(1396, rating: 5, like: false));
+        var ex = await Assert.ThrowsAsync<SerializdRequestException>(() => client.SetShowMetaAsync(1396, rating: 5, like: false));
         Assert.Contains("show-meta", ex.Message);
     }
 
@@ -570,54 +706,39 @@ public class SerializdApiClientTests
         using var client = new SerializdApiClient(Log, handler);
         await client.AuthenticateAsync("me@example.com", "pw");
 
-        var ex = await Assert.ThrowsAsync<Exception>(() =>
+        var ex = await Assert.ThrowsAsync<SerializdRequestException>(() =>
             client.CreateShowReviewAsync(1396, rating: 5, reviewText: null, containsSpoiler: false));
         Assert.Contains("Serializd review", ex.Message);
     }
 
     [Fact]
-    public async Task CreateEpisodeReview_ResolvesSeasonId_PostsScopedPayload()
+    public async Task CreateEpisodeReview_PostsTheResolvedSeasonId_WithoutReadingTheShowAgain()
     {
         string body = string.Empty;
+        var showReads = 0;
         var handler = new ApiMockHandler(req =>
         {
             var path = req.RequestUri!.AbsolutePath;
             if (path.EndsWith("/login"))
                 return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
             if (path.Contains("/show/1396"))
+            {
+                showReads++;
                 return Json(HttpStatusCode.OK, ShowJson);
+            }
             body = ReadBody(req);
             return Json(HttpStatusCode.OK, "{\"id\":1}");
         });
 
         using var client = new SerializdApiClient(Log, handler);
         await client.AuthenticateAsync("me@example.com", "pw");
-        await client.CreateEpisodeReviewAsync(1396, seasonNumber: 1, episodeNumber: 4, rating: 9, reviewText: "good ep", containsSpoiler: false);
+        // The caller resolves the target (SerializdSeasonFallback), so the client posts it as is.
+        await client.CreateEpisodeReviewAsync(1396, seasonId: 3572, episodeNumber: 4, rating: 9, reviewText: "good ep", containsSpoiler: false);
 
         Assert.Contains("\"season_id\":3572", body);
         Assert.Contains("\"episode_number\":4", body);
         Assert.Contains("\"is_log\":true", body);
-    }
-
-    [Fact]
-    public async Task CreateEpisodeReview_UnknownSeason_Throws()
-    {
-        var handler = new ApiMockHandler(req =>
-        {
-            var path = req.RequestUri!.AbsolutePath;
-            if (path.EndsWith("/login"))
-                return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
-            if (path.Contains("/show/1396"))
-                return Json(HttpStatusCode.OK, ShowJson);
-            return Json(HttpStatusCode.OK, "{}");
-        });
-
-        using var client = new SerializdApiClient(Log, handler);
-        await client.AuthenticateAsync("me@example.com", "pw");
-
-        var ex = await Assert.ThrowsAsync<Exception>(() =>
-            client.CreateEpisodeReviewAsync(1396, seasonNumber: 99, episodeNumber: 1, rating: 5, reviewText: null, containsSpoiler: false));
-        Assert.Contains("no season", ex.Message);
+        Assert.Equal(0, showReads);
     }
 
     // ----- Diary -----
@@ -819,6 +940,105 @@ public class SerializdApiClientTests
     }
 
     [Fact]
+    public async Task RateLimited_ForLongerThanTheCap_FailsAtOnceWithoutRetrying()
+    {
+        int attempts = 0;
+        var handler = LoginThen(_ =>
+        {
+            attempts++;
+            var resp = Json(HttpStatusCode.TooManyRequests, "{}");
+            resp.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromMinutes(10));
+            return resp;
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var ex = await Assert.ThrowsAsync<SerializdRequestException>(() => client.SetShowMetaAsync(1396, rating: 5, like: false));
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, ex.StatusCode);
+        Assert.Equal(1, attempts);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"waited {clock.Elapsed}");
+    }
+
+    [Fact]
+    public async Task RateLimitWait_StopsWhenTheSyncIsCancelled()
+    {
+        int attempts = 0;
+        using var cts = new CancellationTokenSource();
+        var handler = LoginThen(_ =>
+        {
+            attempts++;
+            cts.Cancel(); // the sync is stopped while the 429 comes back
+            var resp = Json(HttpStatusCode.TooManyRequests, "{}");
+            resp.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(50));
+            return resp;
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.LogEpisodesAsync(1396, 3572, new[] { 1 }, cts.Token));
+
+        Assert.Equal(1, attempts);
+        // An uncancellable wait would sit out the 50 s before the retry stopped at the request gate.
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"waited {clock.Elapsed}");
+    }
+
+    [Fact]
+    public async Task ServerErrorBackoff_StopsWhenTheSyncIsCancelled()
+    {
+        int attempts = 0;
+        using var cts = new CancellationTokenSource();
+        var handler = LoginThen(_ =>
+        {
+            attempts++;
+            cts.Cancel(); // the sync is stopped while the first attempt is answered (a write, so the send itself is never cut off)
+            return Json(HttpStatusCode.ServiceUnavailable, "{}");
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.SetShowMetaAsync(1396, rating: 5, like: false, cts.Token));
+
+        Assert.Equal(1, attempts);
+        // An uncancellable backoff also ends in a cancellation (the retry stops at the request
+        // gate), so only the time tells them apart: the backoff is at least 500 ms, while a
+        // cancelled one returns at once.
+        Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(450), $"waited {clock.Elapsed}");
+    }
+
+    [Fact]
+    public async Task Read_CancelledByTheCaller_IsNotRetriedAsATimeout()
+    {
+        int reads = 0;
+        using var cts = new CancellationTokenSource();
+        var handler = new AsyncApiMockHandler(async (req, ct) =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
+                return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
+            reads++;
+            cts.CancelAfter(50);
+            await Task.Delay(Timeout.Infinite, ct);
+            return Json(HttpStatusCode.OK, ShowJson);
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.ResolveSeasonIdAsync(1396, 1, cts.Token));
+
+        Assert.Equal(1, reads);
+        // Cut off by the caller, not left to run into the 60 s request timeout.
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"waited {clock.Elapsed}");
+    }
+
+    [Fact]
     public async Task TransientServerError_RetriesThenSucceeds()
     {
         int attempts = 0;
@@ -878,18 +1098,27 @@ public class SerializdApiClientTests
     }
 
     // Render cold starts: no status code, just a failed connection or a hung request.
+    // SocketsHttpHandler reports a refused connection as HttpRequestError.ConnectionError, and a
+    // connection dropped after the request went out as ResponseEnded (or Unknown).
+
+    private static HttpRequestException Refused()
+        => new(HttpRequestError.ConnectionError, "Connection refused (api.serializd.example:443)");
+
+    private static HttpRequestException ResetAfterSend()
+        => new(HttpRequestError.ResponseEnded, "The response ended prematurely.");
+
+    private static ApiMockHandler LoginThen(Func<HttpRequestMessage, HttpResponseMessage> rest)
+        => new(req => req.RequestUri!.AbsolutePath.EndsWith("/login")
+            ? Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}")
+            : rest(req));
 
     [Fact]
-    public async Task ConnectionFailure_RetriesThenSucceeds()
+    public async Task Write_ConnectionRefused_RetriesThenSucceeds()
     {
         int attempts = 0;
-        var handler = new ApiMockHandler(req =>
+        var handler = LoginThen(_ =>
         {
-            if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
-                return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
-            attempts++;
-            if (attempts < 2)
-                throw new HttpRequestException("Connection refused");
+            if (++attempts < 2) throw Refused();
             return Json(HttpStatusCode.OK, "{}");
         });
 
@@ -901,13 +1130,13 @@ public class SerializdApiClientTests
     }
 
     [Fact]
-    public async Task ConnectionFailure_ExhaustsRetriesThenThrows()
+    public async Task ConnectionRefused_ExhaustsRetriesThenThrows()
     {
         int attempts = 0;
         var handler = new ApiMockHandler(_ =>
         {
             attempts++;
-            throw new HttpRequestException("Connection refused");
+            throw Refused();
         });
 
         using var client = new SerializdApiClient(Log, handler);
@@ -916,28 +1145,94 @@ public class SerializdApiClientTests
         Assert.Equal(4, attempts); // initial try + 3 backoff retries
     }
 
+    // A dropped connection after the POST went out may mean Serializd already logged it, so a
+    // retry would log the episode twice.
     [Fact]
-    public async Task HungRequest_TimesOutAndRetries()
+    public async Task Write_ResetAfterSend_IsNotRetried()
+    {
+        int posts = 0;
+        var handler = LoginThen(_ =>
+        {
+            posts++;
+            throw ResetAfterSend();
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => client.CreateEpisodeLogAsync(1396, 3572, 1, DateTime.UtcNow, rating: null, isRewatch: false));
+
+        Assert.Equal(1, posts);
+    }
+
+    [Fact]
+    public async Task Write_Timeout_IsNotRetried()
     {
         var original = SerializdApiClient.RequestTimeout;
         SerializdApiClient.RequestTimeout = TimeSpan.FromMilliseconds(100);
         try
         {
-            int attempts = 0;
+            int posts = 0;
             var handler = new AsyncApiMockHandler(async (req, ct) =>
             {
                 if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
                     return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
-                if (++attempts == 1)
-                    await Task.Delay(Timeout.Infinite, ct);
+                posts++;
+                await Task.Delay(Timeout.Infinite, ct);
                 return Json(HttpStatusCode.OK, "{}");
             });
 
             using var client = new SerializdApiClient(Log, handler);
             await client.AuthenticateAsync("me@example.com", "pw");
-            await client.SetShowMetaAsync(1396, rating: 5, like: false);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.SetShowMetaAsync(1396, rating: 5, like: false));
 
-            Assert.Equal(2, attempts);
+            Assert.Equal(1, posts);
+        }
+        finally
+        {
+            SerializdApiClient.RequestTimeout = original;
+        }
+    }
+
+    [Fact]
+    public async Task Read_ResetConnection_IsRetried()
+    {
+        int reads = 0;
+        var handler = LoginThen(_ =>
+        {
+            if (++reads < 2) throw ResetAfterSend();
+            return Json(HttpStatusCode.OK, ShowJson);
+        });
+
+        using var client = new SerializdApiClient(Log, handler);
+        await client.AuthenticateAsync("me@example.com", "pw");
+
+        Assert.Equal(3572, await client.ResolveSeasonIdAsync(1396, 1));
+        Assert.Equal(2, reads);
+    }
+
+    [Fact]
+    public async Task Read_HungRequest_TimesOutAndRetries()
+    {
+        var original = SerializdApiClient.RequestTimeout;
+        SerializdApiClient.RequestTimeout = TimeSpan.FromMilliseconds(100);
+        try
+        {
+            int reads = 0;
+            var handler = new AsyncApiMockHandler(async (req, ct) =>
+            {
+                if (req.RequestUri!.AbsolutePath.EndsWith("/login"))
+                    return Json(HttpStatusCode.OK, "{\"username\":\"u\",\"token\":\"t\"}");
+                if (++reads == 1)
+                    await Task.Delay(Timeout.Infinite, ct);
+                return Json(HttpStatusCode.OK, ShowJson);
+            });
+
+            using var client = new SerializdApiClient(Log, handler);
+            await client.AuthenticateAsync("me@example.com", "pw");
+
+            Assert.Equal(3572, await client.ResolveSeasonIdAsync(1396, 1));
+            Assert.Equal(2, reads);
         }
         finally
         {
@@ -959,6 +1254,35 @@ public class SerializdApiClientTests
         await Assert.ThrowsAsync<TaskCanceledException>(() => client.AuthenticateAsync("me@example.com", "pw"));
 
         Assert.Equal(1, attempts);
+    }
+
+    // The production client is shared by every account, so a token must only ever ride on the
+    // request it belongs to, never on the client's default headers.
+    [Fact]
+    public async Task TwoAccounts_EachRequestCarriesItsOwnToken_AndNoneIsADefaultHeader()
+    {
+        var seen = new List<(string Path, string? Token)>();
+        HttpResponseMessage Respond(HttpRequestMessage req, string token)
+        {
+            seen.Add((req.RequestUri!.AbsolutePath, req.Headers.Authorization?.Parameter));
+            return req.RequestUri.AbsolutePath.EndsWith("/login")
+                ? Json(HttpStatusCode.OK, $"{{\"username\":\"u\",\"token\":\"{token}\"}}")
+                : Json(HttpStatusCode.OK, ShowJson);
+        }
+
+        using var a = new SerializdApiClient(Log, new ApiMockHandler(r => Respond(r, "token-a")));
+        using var b = new SerializdApiClient(Log, new ApiMockHandler(r => Respond(r, "token-b")));
+        await a.AuthenticateAsync("a@example.com", "pw");
+        await b.AuthenticateAsync("b@example.com", "pw");
+        SerializdApiClient.ResetCachesForTesting();
+        await a.ResolveSeasonIdAsync(1396, 1);
+        SerializdApiClient.ResetCachesForTesting();
+        await b.ResolveSeasonIdAsync(1396, 1);
+
+        Assert.Equal(new string?[] { "token-a", "token-b" },
+            seen.Where(s => s.Path.Contains("/show/1396")).Select(s => s.Token).ToArray());
+        Assert.Null(a.HttpForTesting.DefaultRequestHeaders.Authorization);
+        Assert.Null(b.HttpForTesting.DefaultRequestHeaders.Authorization);
     }
 
     [Fact]

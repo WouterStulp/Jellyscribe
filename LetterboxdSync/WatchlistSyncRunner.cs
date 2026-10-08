@@ -185,7 +185,7 @@ public class WatchlistSyncRunner
         SyncProgress.SetPhase(SyncProgress.TrackLetterboxd, "Authenticating");
 
         var breakerUserId = user.Id.ToString("N");
-        if (AuthBreaker.IsOpen(breakerUserId, account.LetterboxdUsername))
+        if (AuthBreaker.BlocksLogin(breakerUserId, account.LetterboxdUsername))
         {
             _logger.LogInformation(
                 "Skipping watchlist sync for {Username}: auth breaker open; re-save credentials to resume",
@@ -216,12 +216,12 @@ public class WatchlistSyncRunner
         List<int> tmdbIds;
         try
         {
-            tmdbIds = await service.GetWatchlistTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
+            tmdbIds = await service.GetWatchlistTmdbIdsAsync(account.LetterboxdUsername, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Found {Count} films in {Username}'s Letterboxd watchlist",
                 tmdbIds.Count, account.LetterboxdUsername);
             WatchlistStats.SetFilm(user.Id.ToString("N"), account.LetterboxdUsername, tmdbIds.Count);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logger.LogError("Failed to fetch watchlist for {Username}: {Message}", user.Username, ex.Message);
             return;

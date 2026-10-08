@@ -35,6 +35,14 @@ public class SerializdAccount
     [XmlIgnore]
     public bool HasPassword => !string.IsNullOrEmpty(Password);
 
+    /// <summary>Write-only: the owner before an admin moved the account. See <see cref="Account.OriginalUserJellyfinId"/>.</summary>
+    [XmlIgnore]
+    public string? OriginalUserJellyfinId { internal get; set; }
+
+    /// <summary>Write-only: the email before a rename. See <see cref="Account.OriginalLetterboxdUsername"/>.</summary>
+    [XmlIgnore]
+    public string? OriginalEmail { internal get; set; }
+
     /// <summary>
     /// Encrypted on-disk form of <see cref="Password"/>. XmlElement keeps the on-disk
     /// element name stable; JsonIgnore keeps ciphertext out of the admin config page's
@@ -47,9 +55,6 @@ public class SerializdAccount
         get => SecretProtector.Protect(Password) ?? string.Empty;
         set => Password = SecretProtector.Unprotect(value) ?? string.Empty;
     }
-
-    /// <summary>Serializd username returned at login, for display in the UI. Not used for auth.</summary>
-    public string? SerializdUsername { get; set; }
 
     public bool Enabled { get; set; }
 
@@ -95,8 +100,11 @@ public class SerializdAccount
     public bool MirrorJellyseerrWatchlist { get; set; }
 
     /// <summary>
-    /// Optional override for the watchlist collection + playlist name. When null/blank,
-    /// defaults to "Serializd Watchlist". Mirrors <see cref="Account.PlaylistName"/>.
+    /// Optional override for the watchlist collection + playlist name, settable by admins only
+    /// (the per-user endpoint keeps the stored value). When null/blank the playlist is
+    /// "Serializd Watchlist" and the collection "Serializd Watchlist (Jellyfin username)". The
+    /// name is applied when the plugin creates the collection and whenever the resolved name
+    /// changes (this setting, or the username in the default); the collection is tracked by id. Mirrors <see cref="Account.PlaylistName"/>.
     /// </summary>
     public string? WatchlistName { get; set; }
 

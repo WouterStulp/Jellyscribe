@@ -49,6 +49,9 @@ public class SerializdApiClient : ISerializdService
     // (a newly-aired season) before giving up (see ResolveSeasonIdAsync).
     private static readonly ConcurrentDictionary<int, IReadOnlyDictionary<int, int>> SeasonCache = new();
 
+    // showTmdbId -> (seasonNumber -> episode count), filled by the same fetch as SeasonCache.
+    private static readonly ConcurrentDictionary<int, IReadOnlyDictionary<int, int>> EpisodeCountCache = new();
+
     // Serializd 500s when hit with a concurrent burst (seen during the initial diary backfill:
     // 6-7 parallel /show/reviews/add in the same second all returned 500). Two guards keep the
     // backfill polite and self-healing:
@@ -64,6 +67,8 @@ public class SerializdApiClient : ISerializdService
     private static readonly HttpClient SharedHttp = WithDefaultHeaders(new HttpClient(new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        // Shared by every account: a cookie one response set must never ride on another's request.
+        UseCookies = false,
     }));
 
     // Serializd's Render host cold-starts after idling, and a request that hangs on it is
@@ -94,6 +99,7 @@ public class SerializdApiClient : ISerializdService
     {
         TokenCache.Clear();
         SeasonCache.Clear();
+        EpisodeCountCache.Clear();
     }
 
     /// <summary>
@@ -109,7 +115,7 @@ public class SerializdApiClient : ISerializdService
         if (TokenCache.TryGetValue(_cacheKey, out var cached) && !string.IsNullOrEmpty(cached))
         {
             _token = cached;
-            _logger.LogDebug("Reusing cached Serializd token for {Email}", email);
+            _logger.LogDebug("Reusing cached Serializd token for {Account}", LogRedaction.AccountTag(email));
             return;
         }
 
@@ -146,10 +152,10 @@ public class SerializdApiClient : ISerializdService
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
             var message = $"Serializd login failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(err, 200)}";
             // 401/403 is Serializd rejecting the credentials; anything else (5xx after the
-            // cold-start retries) stays a plain Exception so it never reads as a bad login.
+            // cold-start retries) never reads as a bad login.
             if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                throw new SerializdAuthException(message);
-            throw new Exception(message);
+                throw new SerializdAuthException(message, resp.StatusCode);
+            throw new SerializdRequestException(resp.StatusCode, message);
         }
 
         var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -160,35 +166,47 @@ public class SerializdApiClient : ISerializdService
         _username = Username ?? string.Empty;
 
         TokenCache[_cacheKey] = _token;
-        _logger.LogDebug("Authenticated with Serializd as {Email}", _email);
+        _logger.LogDebug("Authenticated with Serializd as {Account}", LogRedaction.AccountTag(_email));
     }
 
-    public async Task<int?> ResolveSeasonIdAsync(int showTmdbId, int seasonNumber)
+    public async Task<int?> ResolveSeasonIdAsync(int showTmdbId, int seasonNumber, CancellationToken cancellationToken = default)
     {
         if (SeasonCache.TryGetValue(showTmdbId, out var map) && map.TryGetValue(seasonNumber, out var cachedId))
             return cachedId;
 
         // Cache miss (or unknown season number): fetch the show fresh once. This
         // also refreshes a stale cache when a new season has aired since last time.
-        var fresh = await FetchSeasonMapAsync(showTmdbId).ConfigureAwait(false);
+        var fresh = await FetchSeasonMapAsync(showTmdbId, cancellationToken).ConfigureAwait(false);
         SeasonCache[showTmdbId] = fresh;
 
         return fresh.TryGetValue(seasonNumber, out var id) ? id : null;
     }
 
-    private async Task<IReadOnlyDictionary<int, int>> FetchSeasonMapAsync(int showTmdbId)
+    public async Task<int?> GetSeasonEpisodeCountAsync(int showTmdbId, int seasonNumber, CancellationToken cancellationToken = default)
     {
-        using var resp = await SendAsync(HttpMethod.Get, $"/show/{showTmdbId}").ConfigureAwait(false);
+        if (!EpisodeCountCache.TryGetValue(showTmdbId, out var counts))
+        {
+            SeasonCache[showTmdbId] = await FetchSeasonMapAsync(showTmdbId, cancellationToken).ConfigureAwait(false);
+            counts = EpisodeCountCache.GetValueOrDefault(showTmdbId) ?? new Dictionary<int, int>();
+        }
+
+        return counts.TryGetValue(seasonNumber, out var count) ? count : null;
+    }
+
+    private async Task<IReadOnlyDictionary<int, int>> FetchSeasonMapAsync(int showTmdbId, CancellationToken cancellationToken)
+    {
+        using var resp = await SendAsync(HttpMethod.Get, $"/show/{showTmdbId}", cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd get-show {showTmdbId} failed ({(int)resp.StatusCode}): {err}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd get-show {showTmdbId} failed ({(int)resp.StatusCode}): {err}");
         }
 
         var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
 
         var map = new Dictionary<int, int>();
+        var counts = new Dictionary<int, int>();
         if (doc.RootElement.TryGetProperty("seasons", out var seasons) && seasons.ValueKind == JsonValueKind.Array)
         {
             foreach (var s in seasons.EnumerateArray())
@@ -196,57 +214,56 @@ public class SerializdApiClient : ISerializdService
                 if (TryGetInt(s, "seasonNumber", out var num) && TryGetInt(s, "id", out var id))
                 {
                     map[num] = id;
+                    if (TryGetInt(s, "episodeCount", out var count) && count > 0)
+                        counts[num] = count;
                 }
             }
         }
 
+        EpisodeCountCache[showTmdbId] = counts;
         return map;
     }
 
-    public async Task LogEpisodesAsync(int showTmdbId, int seasonId, IReadOnlyList<int> episodeNumbers)
-        => await PostEpisodeLogAsync("/episode_log/add", showTmdbId, seasonId, episodeNumbers).ConfigureAwait(false);
+    public async Task LogEpisodesAsync(int showTmdbId, int seasonId, IReadOnlyList<int> episodeNumbers, CancellationToken cancellationToken = default)
+        => await PostEpisodeLogAsync("/episode_log/add", showTmdbId, seasonId, episodeNumbers, cancellationToken).ConfigureAwait(false);
 
     public async Task UnlogEpisodesAsync(int showTmdbId, int seasonId, IReadOnlyList<int> episodeNumbers)
-        => await PostEpisodeLogAsync("/episode_log/remove", showTmdbId, seasonId, episodeNumbers).ConfigureAwait(false);
+        => await PostEpisodeLogAsync("/episode_log/remove", showTmdbId, seasonId, episodeNumbers, CancellationToken.None).ConfigureAwait(false);
 
     public async Task CreateEpisodeLogAsync(int showTmdbId, int seasonId, int episodeNumber,
-        DateTime watchedAtUtc, int? rating, bool isRewatch)
+        DateTime watchedAtUtc, int? rating, bool isRewatch, CancellationToken cancellationToken = default)
     {
-        // is_log=true makes it a dated Diary entry; backdate is the watch date.
-        var body = JsonSerializer.Serialize(ReviewPayload(showTmdbId, seasonId, episodeNumber, string.Empty,
-            containsSpoiler: false, backdate: watchedAtUtc, isLog: true, isRewatch, like: false, rating));
-        using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode)
-        {
-            var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd /show/reviews/add failed ({(int)resp.StatusCode}): {err}");
-        }
-    }
-
-    /// <summary>
-    /// Body for <c>/show/reviews/add</c>, shared by diary logs, reviews and show ratings. Every
-    /// key is always sent: season_id/episode_number go as null for a whole-show entry, and
-    /// rating is required (omitting it returns HTTP 500), with 0 meaning unrated.
-    /// </summary>
-    private static Dictionary<string, object?> ReviewPayload(int showTmdbId, int? seasonId, int? episodeNumber,
-        string reviewText, bool containsSpoiler, DateTime backdate, bool isLog, bool isRewatch, bool like, int? rating)
-        => new()
+        // snake_case body (see /show/reviews/add). is_log=true makes it a dated Diary entry;
+        // backdate is the watch date. rating is required by /show/reviews/add (omitting it
+        // returns HTTP 500); 0 = unrated.
+        var payload = new Dictionary<string, object>
         {
             ["show_id"] = showTmdbId,
             ["season_id"] = seasonId,
             ["episode_number"] = episodeNumber,
-            ["review_text"] = reviewText,
-            ["contains_spoiler"] = containsSpoiler,
-            ["backdate"] = backdate.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-            ["is_log"] = isLog,
+            ["review_text"] = string.Empty,
+            ["contains_spoiler"] = false,
+            ["backdate"] = watchedAtUtc.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            ["is_log"] = true,
             ["is_rewatch"] = isRewatch,
             ["tags"] = Array.Empty<string>(),
             ["allows_comments"] = true,
-            ["like"] = like,
-            ["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0,
+            ["like"] = false,
         };
+        // rating is required by /show/reviews/add (omitting it returns HTTP 500); 0 = unrated.
+        payload["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0;
 
-    private async Task PostEpisodeLogAsync(string path, int showTmdbId, int seasonId, IReadOnlyList<int> episodeNumbers)
+        var body = JsonSerializer.Serialize(payload);
+        using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd /show/reviews/add failed ({(int)resp.StatusCode}): {err}");
+        }
+    }
+
+    private async Task PostEpisodeLogAsync(string path, int showTmdbId, int seasonId, IReadOnlyList<int> episodeNumbers,
+        CancellationToken cancellationToken)
     {
         // snake_case is load-bearing: camelCase returns 500.
         var body = JsonSerializer.Serialize(new Dictionary<string, object>
@@ -256,15 +273,15 @@ public class SerializdApiClient : ISerializdService
             ["show_id"] = showTmdbId,
         });
 
-        using var resp = await SendAsync(HttpMethod.Post, path, body).ConfigureAwait(false);
+        using var resp = await SendAsync(HttpMethod.Post, path, body, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd {path} failed ({(int)resp.StatusCode}): {err}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd {path} failed ({(int)resp.StatusCode}): {err}");
         }
     }
 
-    public async Task<List<SerializdWatchlistEntry>> GetWatchlistAsync()
+    public async Task<List<SerializdWatchlistEntry>> GetWatchlistAsync(CancellationToken cancellationToken = default)
     {
         await EnsureUsernameAsync().ConfigureAwait(false);
         if (string.IsNullOrEmpty(_username))
@@ -272,19 +289,36 @@ public class SerializdApiClient : ISerializdService
 
         var entries = new List<SerializdWatchlistEntry>();
         var seen = new HashSet<int>();
-        for (var page = 1; page <= 100; page++)
+        for (var page = 1; ; page++)
         {
+            if (page > MaxWatchlistPages)
+                throw WatchlistIncomplete(entries.Count, $"more than {MaxWatchlistPages} pages");
+
             using var resp = await SendAsync(HttpMethod.Get,
-                $"/user/{Uri.EscapeDataString(_username)}/watchlistpage_v2/{page}?sort_by=date_added_desc")
-                .ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) break;
+                $"/user/{Uri.EscapeDataString(_username)}/watchlistpage_v2/{page}?sort_by=date_added_desc",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+                throw WatchlistIncomplete(entries.Count, $"status {(int)resp.StatusCode} on page {page}");
 
             var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("items", out var items)
-                || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
-                break;
+            var hasItems = doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array;
+            var declaredPages = TryGetInt(doc.RootElement, "totalPages", out var dp) ? dp : (int?)null;
+            if (!hasItems)
+            {
+                // A first page with no items list and no pages to follow is an empty watchlist.
+                if (page == 1 && (declaredPages ?? 0) == 0) break;
+                throw WatchlistIncomplete(entries.Count, $"a page {page} with no list of items");
+            }
 
+            if (items.GetArrayLength() == 0)
+            {
+                // An empty first page is an empty watchlist; an empty later page is a short read.
+                if (page == 1) break;
+                throw WatchlistIncomplete(entries.Count, $"an empty page {page}");
+            }
+
+            var before = seen.Count;
             foreach (var it in items.EnumerateArray())
             {
                 // Watchlist items carry a TMDb `showId` plus `seasonIds` (Serializd's internal
@@ -298,19 +332,34 @@ public class SerializdApiClient : ISerializdService
                         if (s.ValueKind == JsonValueKind.Number && s.TryGetInt32(out var sidVal))
                             serializdSeasonIds.Add(sidVal);
 
-                var seasonNumbers = await ResolveSeasonNumbersAsync(showTmdb, serializdSeasonIds).ConfigureAwait(false);
+                var seasonNumbers = await ResolveSeasonNumbersAsync(showTmdb, serializdSeasonIds, cancellationToken).ConfigureAwait(false);
                 entries.Add(new SerializdWatchlistEntry(showTmdb, seasonNumbers));
             }
 
             var totalPages = TryGetInt(doc.RootElement, "totalPages", out var t) ? t : page;
             if (page >= totalPages) break;
+
+            // A page with nothing new is the API serving the same page again; stop rather than
+            // walking to the cap.
+            if (page > 1 && seen.Count == before)
+                throw WatchlistIncomplete(entries.Count, $"page {page} repeating earlier shows");
         }
 
         return entries;
     }
 
+    // Only a guard against an API that loops; the read normally stops at totalPages.
+    private const int MaxWatchlistPages = 500;
+
+    // The watchlist sync reconciles the Jellyfin collection, playlist and Seerr watchlist to this
+    // list, so a partial read must throw (leaving all of them as they were) rather than return a
+    // short list that would remove shows still on the watchlist.
+    private static InvalidOperationException WatchlistIncomplete(int count, string reason)
+        => new($"Could not read the whole Serializd watchlist: after {count} shows Serializd returned {reason}. Nothing was changed this run.");
+
     /// <summary>Maps Serializd internal season ids to season numbers via the show's season map.</summary>
-    private async Task<IReadOnlyList<int>> ResolveSeasonNumbersAsync(int showTmdbId, IReadOnlyList<int> serializdSeasonIds)
+    private async Task<IReadOnlyList<int>> ResolveSeasonNumbersAsync(int showTmdbId, IReadOnlyList<int> serializdSeasonIds,
+        CancellationToken cancellationToken)
     {
         if (serializdSeasonIds.Count == 0) return Array.Empty<int>();
 
@@ -319,7 +368,7 @@ public class SerializdApiClient : ISerializdService
         if (!SeasonCache.TryGetValue(showTmdbId, out var numberToId)
             || serializdSeasonIds.Any(sid => !numberToId.Values.Contains(sid)))
         {
-            numberToId = await FetchSeasonMapAsync(showTmdbId).ConfigureAwait(false);
+            numberToId = await FetchSeasonMapAsync(showTmdbId, cancellationToken).ConfigureAwait(false);
             SeasonCache[showTmdbId] = numberToId;
         }
 
@@ -333,7 +382,7 @@ public class SerializdApiClient : ISerializdService
         return numbers;
     }
 
-    public async Task<List<SerializdDiaryEpisode>> GetDiaryEpisodesAsync()
+    public async Task<List<SerializdDiaryEpisode>> GetDiaryEpisodesAsync(CancellationToken cancellationToken = default)
     {
         await EnsureUsernameAsync().ConfigureAwait(false);
         if (string.IsNullOrEmpty(_username))
@@ -344,7 +393,7 @@ public class SerializdApiClient : ISerializdService
         for (var page = 1; page <= 200; page++)
         {
             using var resp = await SendAsync(HttpMethod.Get,
-                $"/user/{Uri.EscapeDataString(_username)}/diary?page={page}").ConfigureAwait(false);
+                $"/user/{Uri.EscapeDataString(_username)}/diary?page={page}", cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) break;
 
             var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -411,8 +460,22 @@ public class SerializdApiClient : ISerializdService
         // So a written review must be a log; a bare rating stays a rating (no diary entry).
         var hasText = !string.IsNullOrWhiteSpace(reviewText);
 
-        var payload = ReviewPayload(showTmdbId, seasonId: null, episodeNumber: null, reviewText ?? string.Empty,
-            containsSpoiler, DateTime.UtcNow, isLog: hasText, isRewatch: false, like: false, rating);
+        var payload = new Dictionary<string, object?>
+        {
+            ["show_id"] = showTmdbId,
+            ["season_id"] = null,
+            ["episode_number"] = null,
+            ["review_text"] = reviewText ?? string.Empty,
+            ["contains_spoiler"] = containsSpoiler,
+            ["backdate"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            ["is_log"] = hasText,
+            ["is_rewatch"] = false,
+            ["tags"] = Array.Empty<string>(),
+            ["allows_comments"] = true,
+            ["like"] = false,
+            // rating is required by /show/reviews/add (omitting it 500s); 0 = unrated.
+            ["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0,
+        };
 
         var body = JsonSerializer.Serialize(payload);
         using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
@@ -423,20 +486,29 @@ public class SerializdApiClient : ISerializdService
             "Serializd review POST show {Show} (is_log={IsLog}, rating={Rating}, textLen={Len}) → HTTP {Status}",
             showTmdbId, hasText, payload["rating"], (reviewText ?? string.Empty).Length, (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Serializd review ({showTmdbId}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd review ({showTmdbId}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
     }
 
-    public async Task CreateEpisodeReviewAsync(int showTmdbId, int seasonNumber, int episodeNumber, int? rating, string? reviewText, bool containsSpoiler)
+    public async Task CreateEpisodeReviewAsync(int showTmdbId, int seasonId, int episodeNumber, int? rating, string? reviewText, bool containsSpoiler)
     {
-        var seasonId = await ResolveSeasonIdAsync(showTmdbId, seasonNumber).ConfigureAwait(false);
-        if (seasonId == null)
-            throw new Exception($"Serializd episode review: no season {seasonNumber} found for show {showTmdbId}");
-
         // Same rule as the show review: review_text only persists on a log (is_log:true). Attaching
         // season_id + episode_number scopes it to the episode instead of the whole show.
         var hasText = !string.IsNullOrWhiteSpace(reviewText);
-        var payload = ReviewPayload(showTmdbId, seasonId.Value, episodeNumber, reviewText ?? string.Empty,
-            containsSpoiler, DateTime.UtcNow, isLog: hasText, isRewatch: false, like: false, rating);
+        var payload = new Dictionary<string, object?>
+        {
+            ["show_id"] = showTmdbId,
+            ["season_id"] = seasonId,
+            ["episode_number"] = episodeNumber,
+            ["review_text"] = reviewText ?? string.Empty,
+            ["contains_spoiler"] = containsSpoiler,
+            ["backdate"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            ["is_log"] = hasText,
+            ["is_rewatch"] = false,
+            ["tags"] = Array.Empty<string>(),
+            ["allows_comments"] = true,
+            ["like"] = false,
+            ["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0,
+        };
 
         var body = JsonSerializer.Serialize(payload);
         using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
@@ -444,22 +516,39 @@ public class SerializdApiClient : ISerializdService
         // Never log the response body: /show/reviews/add echoes the submitted review_text back
         // in the created review object, so logging it would leak a user's private review draft.
         _logger.LogInformation(
-            "Serializd episode review POST show {Show} S{Season}E{Episode} (is_log={IsLog}, rating={Rating}, textLen={Len}) → HTTP {Status}",
-            showTmdbId, seasonNumber, episodeNumber, hasText, payload["rating"], (reviewText ?? string.Empty).Length, (int)resp.StatusCode);
+            "Serializd episode review POST show {Show} season id {SeasonId} episode {Episode} (is_log={IsLog}, rating={Rating}, textLen={Len}) → HTTP {Status}",
+            showTmdbId, seasonId, episodeNumber, hasText, payload["rating"], (reviewText ?? string.Empty).Length, (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Serializd episode review ({showTmdbId} S{seasonNumber}E{episodeNumber}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd episode review ({showTmdbId} season id {seasonId} episode {episodeNumber}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
     }
 
-    public async Task SetShowMetaAsync(int showTmdbId, int? rating, bool like)
+    public async Task SetShowMetaAsync(int showTmdbId, int? rating, bool like, CancellationToken cancellationToken = default)
     {
         // Whole-show entry, is_log:false so it's a rating/like rather than a Diary row.
-        var body = JsonSerializer.Serialize(ReviewPayload(showTmdbId, seasonId: null, episodeNumber: null,
-            string.Empty, containsSpoiler: false, DateTime.UtcNow, isLog: false, isRewatch: false, like, rating));
-        using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body).ConfigureAwait(false);
+        // season_id/episode_number are sent as null (the API requires the keys present).
+        var payload = new Dictionary<string, object?>
+        {
+            ["show_id"] = showTmdbId,
+            ["season_id"] = null,
+            ["episode_number"] = null,
+            ["review_text"] = string.Empty,
+            ["contains_spoiler"] = false,
+            ["backdate"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            ["is_log"] = false,
+            ["is_rewatch"] = false,
+            ["tags"] = Array.Empty<string>(),
+            ["allows_comments"] = true,
+            ["like"] = like,
+        };
+        // rating is required by /show/reviews/add (omitting it returns HTTP 500); 0 = unrated.
+        payload["rating"] = rating is > 0 ? Math.Clamp(rating.Value, 1, 10) : 0;
+
+        var body = JsonSerializer.Serialize(payload);
+        using var resp = await SendAsync(HttpMethod.Post, "/show/reviews/add", body, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd show-meta ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd show-meta ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
         }
     }
 
@@ -477,7 +566,7 @@ public class SerializdApiClient : ISerializdService
     public async Task SetWatchedAsync(int showTmdbId)
     {
         // Fetched fresh: a cached map can predate the show's last seasons, and this runs once per show.
-        var seasons = await FetchSeasonMapAsync(showTmdbId).ConfigureAwait(false);
+        var seasons = await FetchSeasonMapAsync(showTmdbId, CancellationToken.None).ConfigureAwait(false);
         SeasonCache[showTmdbId] = seasons;
 
         var payload = new Dictionary<string, object>
@@ -506,8 +595,12 @@ public class SerializdApiClient : ISerializdService
         }
     }
 
+    /// <param name="cancellationToken">Cancels the waits (the request gate, backoff and a
+    /// rate-limit pause) and a read in flight, never a write already sent: Serializd may have
+    /// applied it.</param>
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path,
-        string? body = null, bool authenticated = true, bool isRetry = false, int attempt = 0)
+        string? body = null, bool authenticated = true, bool isRetry = false, int attempt = 0,
+        CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(method, SerializdApiConstants.BaseUrl + path);
         if (authenticated && !string.IsNullOrEmpty(_token))
@@ -518,37 +611,53 @@ public class SerializdApiClient : ISerializdService
         // Cap concurrency: the gate wraps only the raw send (never a delay or the recursive
         // retry), so a slow endpoint can't hold a slot and the 401/login recursion can't deadlock.
         // A Render cold start surfaces as a refused/reset connection or a timeout rather than
-        // a status code, so those are retried like a transient 5xx (response stays null).
+        // a status code, so those are retried like a transient 5xx (response stays null). The
+        // timeout starts once a slot is free, so waiting behind other requests never eats it.
         HttpResponseMessage? response = null;
         var failure = string.Empty;
-        using var timeout = new CancellationTokenSource(RequestTimeout);
-        await RequestGate.WaitAsync().ConfigureAwait(false);
+        await RequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        CancellationTokenSource? timeout = null;
         try
         {
-            response = await _http.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            timeout = new CancellationTokenSource(RequestTimeout);
+            // Kept apart from the caller's token, so IsRetryableSendFailure still tells our own
+            // timeout from a cancellation.
+            using var send = CancellationTokenSource.CreateLinkedTokenSource(
+                timeout.Token, IsRead(method) ? cancellationToken : CancellationToken.None);
+            response = await _http.SendAsync(request, send.Token).ConfigureAwait(false);
         }
-        catch (Exception ex) when (IsColdStartFailure(ex, timeout) && attempt + 1 < MaxSendAttempts)
+        catch (Exception ex) when (IsRetryableSendFailure(method, ex, timeout!) && attempt + 1 < MaxSendAttempts)
         {
             failure = ex.GetType().Name;
         }
         finally
         {
+            timeout?.Dispose();
             RequestGate.Release();
         }
 
         if (response == null)
         {
-            await BackoffAsync(path, failure, attempt).ConfigureAwait(false);
-            return await SendAsync(method, path, body, authenticated, isRetry, attempt + 1).ConfigureAwait(false);
+            await BackoffAsync(path, failure, attempt, cancellationToken).ConfigureAwait(false);
+            return await SendAsync(method, path, body, authenticated, isRetry, attempt + 1, cancellationToken).ConfigureAwait(false);
         }
 
-        if (response.StatusCode == (HttpStatusCode)429 && !isRetry)
+        if (response.StatusCode == HttpStatusCode.TooManyRequests && !isRetry)
         {
-            var retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds ?? 10;
-            _logger.LogWarning("Serializd rate limited, waiting {Seconds}s", retryAfter);
+            // Longer than the cap: hand the 429 back so the caller fails this item now.
+            var wait = RetryAfterLimit.Wait(response.Headers.RetryAfter);
+            if (wait == null)
+            {
+                // No path: some carry the member's username.
+                _logger.LogWarning("Serializd rate limited for longer than {Max}s, not retrying",
+                    RetryAfterLimit.Max.TotalSeconds);
+                return response;
+            }
+
+            _logger.LogWarning("Serializd rate limited, waiting {Seconds}s", wait.Value.TotalSeconds);
             response.Dispose();
-            await Task.Delay(TimeSpan.FromSeconds(retryAfter)).ConfigureAwait(false);
-            return await SendAsync(method, path, body, authenticated, isRetry: true).ConfigureAwait(false);
+            await Task.Delay(wait.Value, cancellationToken).ConfigureAwait(false);
+            return await SendAsync(method, path, body, authenticated, isRetry: true, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         // Transient server errors (Serializd 500s under load, plus 502/503/504): back off and
@@ -558,37 +667,58 @@ public class SerializdApiClient : ISerializdService
         if ((code == 500 || code == 502 || code == 503 || code == 504) && attempt + 1 < MaxSendAttempts)
         {
             response.Dispose();
-            await BackoffAsync(path, code.ToString(CultureInfo.InvariantCulture), attempt).ConfigureAwait(false);
-            return await SendAsync(method, path, body, authenticated, isRetry, attempt + 1).ConfigureAwait(false);
+            await BackoffAsync(path, code.ToString(CultureInfo.InvariantCulture), attempt, cancellationToken).ConfigureAwait(false);
+            return await SendAsync(method, path, body, authenticated, isRetry, attempt + 1, cancellationToken).ConfigureAwait(false);
         }
 
         // Token went stale: clear the cache, re-login with stored credentials, retry once.
         if (authenticated && response.StatusCode == HttpStatusCode.Unauthorized && !isRetry
             && !string.IsNullOrEmpty(_email))
         {
-            _logger.LogWarning("Serializd token rejected (401), re-authenticating for {Email}", _email);
+            _logger.LogWarning("Serializd token rejected (401), re-authenticating for {Account}", LogRedaction.AccountTag(_email));
             response.Dispose();
             TokenCache.TryRemove(_cacheKey, out _);
             _token = string.Empty;
             await LoginAsync().ConfigureAwait(false);
-            return await SendAsync(method, path, body, authenticated, isRetry: true).ConfigureAwait(false);
+            return await SendAsync(method, path, body, authenticated, isRetry: true, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         return response;
     }
 
-    // Only our own timeout counts: a TaskCanceledException from anywhere else is a real
-    // cancellation and must propagate.
-    private static bool IsColdStartFailure(Exception ex, CancellationTokenSource timeout)
-        => ex is HttpRequestException
-           || (ex is TaskCanceledException && (timeout.IsCancellationRequested || ex.InnerException is TimeoutException));
+    /// <summary>
+    /// Whether a send that got no response may be tried again. A read (GET) may always be: a
+    /// cold start shows up as a refused or reset connection, or our own timeout. A write may only
+    /// be retried when the connection was never made, because after a timeout or a reset the
+    /// server may already have applied it, and a second POST would log the episode twice. Only
+    /// our own timeout counts: a TaskCanceledException from anywhere else is a real cancellation
+    /// and must propagate.
+    /// </summary>
+    internal static bool IsRetryableSendFailure(HttpMethod method, Exception ex, CancellationTokenSource timeout)
+    {
+        if (IsRead(method))
+            return ex is HttpRequestException
+                || (ex is TaskCanceledException && (timeout.IsCancellationRequested || ex.InnerException is TimeoutException));
 
-    private async Task BackoffAsync(string path, string reason, int attempt)
+        return IsConnectFailure(ex);
+    }
+
+    private static bool IsRead(HttpMethod method) => method == HttpMethod.Get || method == HttpMethod.Head;
+
+    // The request never left this machine: no name, no connection, or no TLS session.
+    private static bool IsConnectFailure(Exception ex)
+        => ex is HttpRequestException
+        {
+            HttpRequestError: HttpRequestError.NameResolutionError
+            or HttpRequestError.ConnectionError or HttpRequestError.SecureConnectionError
+        };
+
+    private async Task BackoffAsync(string path, string reason, int attempt, CancellationToken cancellationToken)
     {
         var delayMs = (int)(Math.Pow(2, attempt) * 500) + Random.Shared.Next(0, 400); // ~0.5s, 1s, 2s (+jitter)
         _logger.LogWarning("Serializd {Path} failed ({Reason}); backing off {Ms}ms then retry {Next}/{Max}",
             path, reason, delayMs, attempt + 2, MaxSendAttempts);
-        await Task.Delay(delayMs).ConfigureAwait(false);
+        await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()

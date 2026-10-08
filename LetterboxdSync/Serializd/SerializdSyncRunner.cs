@@ -47,6 +47,16 @@ public class SerializdSyncRunner
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
 
     /// <summary>
+    /// After this many Serializd calls in a row fail for one account, the rest of that account's
+    /// catch-up waits for the next run: Serializd is down or refusing the account, and trying
+    /// every remaining episode would only hammer it.
+    /// </summary>
+    internal const int MaxConsecutiveFailures = 5;
+
+    /// <summary>Pause after a failed call, so a struggling Serializd gets room. A test hook replaces it.</summary>
+    internal static TimeSpan FailurePause { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// Reads the parent series' TMDb id from an episode. Overridable so the runner's tests
     /// can supply ids without wiring Jellyfin's library-parent graph. Production reads the
     /// resolved Series entity (populated at runtime).
@@ -85,7 +95,19 @@ public class SerializdSyncRunner
             foreach (var (user, account) in pairs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await SyncOneLoggedAsync(user, account, source, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await SyncOneAsync(user, account, source, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Serializd catch-up failed for {Username} as {Account}: {Message}",
+                        user.Username, LogRedaction.AccountTag(account.Email), ex.Message);
+                }
 
                 processed++;
                 if (pairs.Count > 0)
@@ -122,7 +144,19 @@ public class SerializdSyncRunner
             foreach (var account in accounts)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await SyncOneLoggedAsync(user, account, source, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await SyncOneAsync(user, account, source, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Serializd catch-up failed for {Username} as {Account}: {Message}",
+                        user.Username, LogRedaction.AccountTag(account.Email), ex.Message);
+                }
             }
 
             return true;
@@ -131,20 +165,6 @@ public class SerializdSyncRunner
         {
             SyncProgress.Complete(SyncProgress.TrackSerializd);
             SerializdSyncGate.Instance.Release();
-        }
-    }
-
-    /// <summary>One account's failure is logged and never stops the remaining accounts.</summary>
-    private async Task SyncOneLoggedAsync(User user, SerializdAccount account, string source, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await SyncOneAsync(user, account, source, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Serializd catch-up failed for {Username} as {Email}: {Message}",
-                user.Username, account.Email, ex.Message);
         }
     }
 
@@ -215,8 +235,8 @@ public class SerializdSyncRunner
 
         if (skippedExcluded > 0)
             _logger.LogInformation(
-                "Serializd catch-up: skipping {Count} episodes for {Username} as {Email}: in a library this account excludes",
-                skippedExcluded, user.Username, account.Email);
+                "Serializd catch-up: skipping {Count} episodes for {Username} as {Account}: in a library this account excludes",
+                skippedExcluded, user.Username, LogRedaction.AccountTag(account.Email));
 
         if (skippedNoPlayDate > 0)
             _logger.LogInformation(
@@ -278,7 +298,7 @@ public class SerializdSyncRunner
 
         if (needsWatched.Count == 0 && needsLog.Count == 0 && !statusPending)
         {
-            _logger.LogDebug("Serializd catch-up: nothing new for {Username} as {Email}", user.Username, account.Email);
+            _logger.LogDebug("Serializd catch-up: nothing new for {Username} as {Account}", user.Username, LogRedaction.AccountTag(account.Email));
             return;
         }
 
@@ -291,7 +311,7 @@ public class SerializdSyncRunner
         {
             if (targets.TryGetValue((show, season), out var cached)) return cached;
             var target = await SerializdSeasonFallback.ResolveAsync(service, show, season,
-                () => SerializdSeasonFallback.SeasonLengthsReader(seriesById.GetValueOrDefault(show)))
+                () => SerializdSeasonFallback.SeasonLengthsReader(seriesById.GetValueOrDefault(show)), cancellationToken)
                 .ConfigureAwait(false);
             targets[(show, season)] = target;
             if (target is { EpisodeOffset: > 0 })
@@ -299,6 +319,33 @@ public class SerializdSyncRunner
                     "Serializd lists TMDb show {Show} as a single season; logging its season {Season} from S1E{First}",
                     show, season, target.EpisodeOffset + 1);
             return target;
+        }
+
+        // Counts service failures in a row across both phases (see SyncErrors.IsServiceFailure);
+        // any success resets it, and a failure about one item neither counts nor resets.
+        var failuresInARow = 0;
+        var stopped = false;
+        async Task<bool> FailedAsync(Exception ex)
+        {
+            if (SyncErrors.IsServiceFailure(ex) && ++failuresInARow >= MaxConsecutiveFailures)
+            {
+                _logger.LogWarning(
+                    "Serializd catch-up: {Count} calls in a row failed for {Username} as {Account}; stopping this account until the next run",
+                    failuresInARow, user.Username, LogRedaction.AccountTag(account.Email));
+                SerializdActivity.Record(new SyncEvent
+                {
+                    FilmTitle = "Serializd account paused",
+                    Username = user.Username ?? string.Empty,
+                    Timestamp = DateTime.UtcNow,
+                    Status = SyncStatus.Skipped,
+                    Error = $"Serializd failed {failuresInARow} times in a row (down or refusing the account); the rest waits for the next sync",
+                    Source = source,
+                });
+                return true;
+            }
+
+            await Task.Delay(FailurePause, cancellationToken).ConfigureAwait(false);
+            return false;
         }
 
         // 1. Watched-status marking, batched per (show, season).
@@ -314,17 +361,35 @@ public class SerializdSyncRunner
                     continue;
                 }
 
-                await service.LogEpisodesAsync(show, target.SeasonId, epNums.Select(n => n + target.EpisodeOffset).ToList())
-                    .ConfigureAwait(false);
-                foreach (var n in epNums)
+                var fitting = epNums.Where(n => target.EpisodeFor(n) != null).ToList();
+                if (fitting.Count < epNums.Count)
+                    _logger.LogWarning(
+                        "Serializd's season 1 of TMDb show {Show} is too short for some of season {Season}, skipping those episodes",
+                        show, season);
+                if (fitting.Count == 0) continue;
+
+                await service.LogEpisodesAsync(show, target.SeasonId, fitting.Select(n => target.EpisodeFor(n)!.Value).ToList(),
+                    cancellationToken).ConfigureAwait(false);
+                foreach (var n in fitting)
                     SerializdSyncHistory.Record(userId, account.Email, show, season, n);
+                failuresInARow = 0;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 _logger.LogError("Serializd catch-up: failed marking watched TMDb {Show} S{Season} for {Username}: {Message}",
                     show, season, user.Username, ex.Message);
+                stopped = await FailedAsync(ex).ConfigureAwait(false);
+                if (stopped)
+                    break;
             }
         }
+
+        if (stopped)
+            return;
 
         // 2. Dated Diary logs, one per episode, backdated to the real watch date.
         SyncProgress.SetPhase(SyncProgress.TrackSerializd, "Logging episodes to Serializd");
@@ -337,12 +402,14 @@ public class SerializdSyncRunner
             try
             {
                 var target = await TargetFor(r.Show, r.Season).ConfigureAwait(false);
-                if (target == null) continue;
+                var serializdEpisode = target?.EpisodeFor(r.Episode);
+                if (target == null || serializdEpisode == null) continue;
 
-                await service.CreateEpisodeLogAsync(r.Show, target.SeasonId, r.Episode + target.EpisodeOffset, r.WatchedAtUtc, r.Rating, isRewatch: false)
-                    .ConfigureAwait(false);
+                await service.CreateEpisodeLogAsync(r.Show, target.SeasonId, serializdEpisode.Value, r.WatchedAtUtc, r.Rating, isRewatch: false,
+                    cancellationToken).ConfigureAwait(false);
                 SerializdSyncHistory.Record(userId, account.Email, r.Show, r.Season, r.Episode, SerializdSyncHistory.KindLog);
                 logged++;
+                failuresInARow = 0;
 
                 SerializdActivity.Record(new SyncEvent
                 {
@@ -357,6 +424,11 @@ public class SerializdSyncRunner
 
                 // Be polite during a large first-time backfill.
                 await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Shutdown, not a failure of this episode: record nothing.
+                throw;
             }
             catch (Exception ex)
             {
@@ -378,12 +450,19 @@ public class SerializdSyncRunner
                     _logger.LogWarning("Serializd catch-up: stopping on first failure for {Username} (StopOnFailure)", user.Username);
                     break;
                 }
+
+                stopped = await FailedAsync(ex).ConfigureAwait(false);
+                if (stopped)
+                    break;
             }
         }
 
         if (logged > 0)
-            _logger.LogInformation("Serializd catch-up: created {Count} dated diary logs for {Username} as {Email}",
-                logged, user.Username, account.Email);
+            _logger.LogInformation("Serializd catch-up: created {Count} dated diary logs for {Username} as {Account}",
+                logged, user.Username, LogRedaction.AccountTag(account.Email));
+
+        if (stopped)
+            return;
 
         // 3. Show-level rating + favorite (like) sync, one entry per rated/favorited series
         //    among the shows we're tracking. is_log:false so it doesn't clutter the Diary.
@@ -446,12 +525,12 @@ public class SerializdSyncRunner
 
             try
             {
-                await service.SetShowMetaAsync(tmdb, rating, favorite).ConfigureAwait(false);
+                await service.SetShowMetaAsync(tmdb, rating, favorite, cancellationToken).ConfigureAwait(false);
                 SerializdSyncHistory.Record(userId, account.Email, tmdb, 0, 0, SerializdSyncHistory.KindShowMeta);
                 _logger.LogInformation("Serializd: set show meta for TMDb {Show} (rating={Rating}, like={Like}) for {Username}",
                     tmdb, rating, favorite, user.Username);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 _logger.LogError("Serializd: failed setting show meta for TMDb {Show} for {Username}: {Message}",
                     tmdb, user.Username, ex.Message);
