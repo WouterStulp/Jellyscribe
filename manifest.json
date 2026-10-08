@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.10.6.0",
+        "changelog": "Jellyscribe no longer sends saved passwords, cookies or the Seerr API key back to the browser. Before, the settings pages loaded each linked account's Letterboxd or Serializd password and cookies into the form, and the admin settings returned every user's password and the Seerr key. Anyone holding a session could read them. Saved values now show as \"Saved\" with an empty field. Leave it blank to keep the saved value, type to replace it, or tick \"Remove saved cookies\" or \"Remove saved key\" to drop it. Verify login works with the saved password, and an admin can move an account to another Jellyfin user or rename it without re-entering its password. Existing saved logins keep working after the upgrade. Thanks to Wouter Stulp, whose fork made stored secrets write-only first; this release builds on his work.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.10.6/jellyfin-plugin-letterboxd-v2.10.6.zip",
+        "checksum": "60247a7da142a4ee4a2d4af8dd10b99f",
+        "timestamp": "2026-10-08T02:24:14Z"
+      },
+      {
         "version": "2.10.5.0",
         "changelog": "Serializd watchlist collections are now kept separately for each person. Before, everyone who turned on Serializd watchlist sync shared one collection called \"Serializd Watchlist\", so each person's sync removed the other's shows. A custom name could also point the sync at any collection on the server, including one an admin curates. Each linked account now gets its own collection, named \"Serializd Watchlist (your Jellyfin username)\" by default, and Jellyscribe only ever changes the collection it made for that account. On upgrade, if only one account was syncing into the old shared collection, it carries on using it. Otherwise the old collection is left exactly as it is and each account gets a fresh one, so you can delete the old one once you no longer need it. Collections are visible to everyone who can see the shows in them. Custom names for watchlist collections and playlists can now be set only by an admin, from the plugin's settings page. Seerr requests are now made as each person's own Seerr account, so Seerr applies their own permissions. Admins, note one change: if you have turned off \"Auto-approve requests created by Jellyscribe\", requests from people without Auto-Approve in Seerr now wait in Seerr's approval queue, where before they were approved as the admin. With the switch on, which is the default, requests still go straight through. Thanks to Wouter Stulp, who spotted the Seerr approval problem in his fork.",
         "targetAbi": "10.11.9.0",
