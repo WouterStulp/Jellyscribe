@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.12.2.0",
+        "changelog": "Both Jellyscribe dashboards, the admin settings page and your own page, now share one script and one stylesheet instead of each carrying its own copy. The pages are about five times smaller, and the shared part, fonts included, is downloaded once per version and then cached. They look and behave exactly as before. After a plugin upgrade, an open browser tab picks up the new version the next time the page is opened, with no reload needed. When you post a review that lands on a diary entry you had already logged, the result now says so, and any note from the server is shown under that account. The design follows Wouter Stulp's shared-assets work in his fork, reworked to keep the bundled fonts and to load the right version after an upgrade.\n\n```markdown",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.12.2/jellyfin-plugin-letterboxd-v2.12.2.zip",
+        "checksum": "800f980a2df1292b0ff88ab87dcfb698",
+        "timestamp": "2026-10-08T03:17:58Z"
+      },
+      {
         "version": "2.12.1.0",
         "changelog": "Reviewing a film from your activity list no longer adds a second watch to your Letterboxd diary. When the film is already in your diary from a sync, the review and its star rating now go onto that diary entry, keeping its original date. A review is never written over one you already wrote on Letterboxd: you are asked to edit that one on Letterboxd instead. If the entry can't be found, or your account is signed in through the Letterboxd website rather than the official API, the review is saved as a new entry on the day you watched the film rather than today, and the result tells you so.",
         "targetAbi": "10.11.9.0",
