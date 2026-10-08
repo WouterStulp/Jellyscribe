@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.10.5.0",
+        "changelog": "Serializd watchlist collections are now kept separately for each person. Before, everyone who turned on Serializd watchlist sync shared one collection called \"Serializd Watchlist\", so each person's sync removed the other's shows. A custom name could also point the sync at any collection on the server, including one an admin curates. Each linked account now gets its own collection, named \"Serializd Watchlist (your Jellyfin username)\" by default, and Jellyscribe only ever changes the collection it made for that account. On upgrade, if only one account was syncing into the old shared collection, it carries on using it. Otherwise the old collection is left exactly as it is and each account gets a fresh one, so you can delete the old one once you no longer need it. Collections are visible to everyone who can see the shows in them. Custom names for watchlist collections and playlists can now be set only by an admin, from the plugin's settings page. Seerr requests are now made as each person's own Seerr account, so Seerr applies their own permissions. Admins, note one change: if you have turned off \"Auto-approve requests created by Jellyscribe\", requests from people without Auto-Approve in Seerr now wait in Seerr's approval queue, where before they were approved as the admin. With the switch on, which is the default, requests still go straight through. Thanks to Wouter Stulp, who spotted the Seerr approval problem in his fork.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.10.5/jellyfin-plugin-letterboxd-v2.10.5.zip",
+        "checksum": "15aeee7f14a5a53c85d2a034b8cb1a38",
+        "timestamp": "2026-10-08T02:20:26Z"
+      },
+      {
         "version": "2.10.4.0",
         "changelog": "Jellyscribe is now safer on servers shared by several people. Only administrators can run the Seerr connection test, and a failed test no longer reports details about what lives at the address entered. The sync progress shown on the dashboard no longer names whose sync is running. The activity and stats views refuse to answer when the server cannot tell who is asking, where before they returned everyone's history. Login checks for Letterboxd and Serializd are now rate-limited per user and across the server, so nobody can use the server to test passwords and get its address blocked; the dashboard says how long to wait. \"Sync watchlist now\" for Serializd can no longer start several overlapping runs. Two old account endpoints that nothing used any more were removed, one of which returned a stored password. The Seerr URL field now shows a generic example address. Thanks to Wouter Stulp, whose fork fixed the Seerr test, progress and history issues first.",
         "targetAbi": "10.11.9.0",
