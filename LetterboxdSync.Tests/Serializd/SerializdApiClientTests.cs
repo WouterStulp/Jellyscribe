@@ -51,6 +51,23 @@ public class SerializdApiClientTests
     }
 
     [Fact]
+    public async Task Authenticate_NamesTheAccountByTag_NeverByEmail()
+    {
+        var handler = new ApiMockHandler(req => req.RequestUri!.AbsolutePath.EndsWith("/login")
+            ? Json(HttpStatusCode.OK, "{\"username\":\"demo-bingewatcher\",\"token\":\"tok\"}")
+            : Json(HttpStatusCode.OK, "{}"));
+        var logger = new ListLogger();
+
+        using (var first = new SerializdApiClient(logger, handler)) await first.AuthenticateAsync("demo@example.com", "pw");
+        using (var cached = new SerializdApiClient(logger, handler)) await cached.AuthenticateAsync("demo@example.com", "pw");
+
+        var tag = LogRedaction.AccountTag("demo@example.com");
+        Assert.Contains(logger.Entries, e => e.Message == "Authenticated with Serializd as " + tag);
+        Assert.Contains(logger.Entries, e => e.Message == "Reusing cached Serializd token for " + tag);
+        Assert.DoesNotContain(logger.Entries, e => e.Message.Contains("demo@example.com"));
+    }
+
+    [Fact]
     public async Task Authenticate_SameEmailWrongPassword_DoesNotReuseCachedToken()
     {
         var logins = new List<string>();

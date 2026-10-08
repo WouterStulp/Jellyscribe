@@ -168,8 +168,9 @@ public class LetterboxdController : JellyfinUserApiController
     /// <summary>
     /// Returns the exact JSON the next telemetry ping would send. Admin-only: the payload
     /// contains the instance UUID plus a configuration fingerprint, the same policy as
-    /// the config page that displays it. Backs the settings "Preview exact JSON" modal,
-    /// which doubles as a copy-diagnostic-bundle for bug reports.
+    /// the config page that displays it. Backs the Integrations "Preview" dialog and the
+    /// Overview opt-in notice, whose Copy and "Copy + regenerate ID" actions double as a
+    /// diagnostic bundle for bug reports.
     /// </summary>
     [HttpGet("Telemetry/Preview")]
     [Authorize(Policy = "RequiresElevation")]
@@ -192,6 +193,19 @@ public class LetterboxdController : JellyfinUserApiController
 
         var json = TelemetryService.BuildPayload("weekly", libraryCount);
         return Content(json, "application/json");
+    }
+
+    /// <summary>
+    /// Gives this server a new random telemetry instance id, the settings "Regenerate ID" and
+    /// "Copy + regenerate ID" actions. Admin-only, like the preview that shows the id. Later
+    /// pings and log bundles carry only the new id; rows already sent keep the old one.
+    /// </summary>
+    [HttpPost("Telemetry/RegenerateId")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult RegenerateTelemetryId()
+    {
+        return Ok(new { instanceId = TelemetryService.RegenerateInstanceId() });
     }
 
     [HttpGet("Stats")]
@@ -707,8 +721,8 @@ public class LetterboxdController : JellyfinUserApiController
     /// Returns the most recent LetterboxdSync log lines from Jellyfin's log files,
     /// for in-dashboard debugging and "send me your logs" support flows.
     /// Reads only LetterboxdSync-tagged lines so users can share without leaking
-    /// unrelated server activity. The plugin already redacts review text and never
-    /// logs auth tokens, passwords, or cookies, so this output is safe to share.
+    /// unrelated server activity. The plugin never logs review text, auth tokens,
+    /// passwords or cookies, and the reader masks email addresses.
     /// </summary>
     [HttpGet("Logs")]
     [Authorize(Policy = "RequiresElevation")] // raw server logs name every user's Letterboxd account + watched films; admin-only
@@ -741,8 +755,9 @@ public class LetterboxdController : JellyfinUserApiController
     /// Reads ALL recent LetterboxdSync-tagged lines from Jellyfin's two newest main
     /// log files (covering a just-rolled-over file), untrimmed. Shared by the Logs tab
     /// and the "Send logs to developer" bundle; each caller caps as it sees fit. The
-    /// plugin never logs auth tokens, passwords, cookies, or review text, so these
-    /// lines are safe to share.
+    /// plugin never logs auth tokens, passwords, cookies, or review text, and every
+    /// email address is replaced with [email]. The lines still name films, shows,
+    /// Jellyfin users and Letterboxd usernames.
     /// </summary>
     private (List<string> Lines, string? Source, string? Error) ReadRecentLogLines()
     {
@@ -772,17 +787,23 @@ public class LetterboxdController : JellyfinUserApiController
                 // too (until the next timestamped header) or the most useful diagnostic, the
                 // stack trace, gets shredded by a per-line filter.
                 var inMatch = false;
+                var inLegacyReviewBody = false;
                 while ((line = sr.ReadLine()) != null)
                 {
-                    line = StripAnsi(line);
+                    // Emails are masked here, in the one reader behind the Logs tab, the bundle
+                    // preview and the send, so all three show the same lines.
+                    line = LogRedaction.RedactEmails(StripAnsi(line));
                     var isHeader = IsLogHeader(line);
                     if (isHeader)
                     {
                         inMatch = line.Contains("LetterboxdSync", StringComparison.Ordinal) ||
                                   line.Contains("Letterboxd ", StringComparison.Ordinal);
+                        // Older releases logged the review reply's body, which can echo the review;
+                        // such a line keeps its status and loses the body, continuation lines included.
+                        inLegacyReviewBody = inMatch && LogRedaction.TryCutLegacyReviewBody(ref line);
                         if (inMatch) lines.Add(line);
                     }
-                    else if (inMatch)
+                    else if (inMatch && !inLegacyReviewBody)
                     {
                         lines.Add(line); // continuation of a matched entry (stack frame / message)
                     }
@@ -798,15 +819,12 @@ public class LetterboxdController : JellyfinUserApiController
         }
     }
 
-    /// <summary>
-    /// User-initiated "send logs to developer". Builds a diagnostic bundle (recent
-    /// sanitized log lines + the current telemetry snapshot + versions) and uploads
-    /// it to the private telemetry backend, returning a short reference code the user
-    /// can quote in a bug report. Admin-only. Unlike telemetry this is NOT anonymous
-    /// (logs may contain a Letterboxd username or film titles) and only runs on this
-    /// explicit, disclosed action. Works whether or not telemetry is enabled; if no
-    /// telemetry instance id exists, a one-off id is generated for the bundle.
-    /// </summary>
+    // The id a bundle carries when telemetry never made one: one per server run, so the
+    // preview shows the same id the send then uploads.
+    private static readonly string OneOffBundleId = Guid.NewGuid().ToString();
+
+    private const int MaxNoteLength = 2000;
+
     /// <summary>
     /// Assembles the exact diagnostic bundle JSON for the calling server. Used by both
     /// the preview and the send so they cannot diverge: what the preview shows is byte
@@ -814,6 +832,12 @@ public class LetterboxdController : JellyfinUserApiController
     /// </summary>
     private (string Json, int MatchedLines) BuildLogBundleJson(string? note)
     {
+        // The ingest Worker keeps the first 2000 characters of a note (worker/src/index.ts);
+        // cut it here so the preview shows what is kept, never splitting a surrogate pair.
+        if (string.IsNullOrEmpty(note)) note = null;
+        else if (note.Length > MaxNoteLength)
+            note = note[..(char.IsHighSurrogate(note[MaxNoteLength - 1]) ? MaxNoteLength - 1 : MaxNoteLength)];
+
         var (allLines, source, error) = ReadRecentLogLines();
         var matched = allLines.Count;
         var lines = allLines.Count > 500 ? allLines.GetRange(allLines.Count - 500, 500) : allLines;
@@ -842,7 +866,7 @@ public class LetterboxdController : JellyfinUserApiController
         var telemetrySnapshot = TelemetryService.BuildPayload("logs", libraryCount);
         var instanceId = Plugin.Instance?.Configuration?.Telemetry?.InstanceId;
         if (string.IsNullOrEmpty(instanceId))
-            instanceId = Guid.NewGuid().ToString();
+            instanceId = OneOffBundleId;
 
         var json = TelemetryService.BuildLogBundleJson(
             instanceId,
@@ -856,17 +880,29 @@ public class LetterboxdController : JellyfinUserApiController
 
     /// <summary>
     /// Returns the EXACT bundle that "Send logs to developer" would upload, without
-    /// sending it. Backs the consent modal's "Preview exactly what's sent" so the user
-    /// sees the real log lines and telemetry snapshot, not just the anonymous part.
+    /// sending it, including the note the admin has typed so far. Backs the Logs tab's
+    /// Preview so the user sees the real log lines and telemetry snapshot, not just the
+    /// anonymous part. A POST so the note travels in the body, never in a URL that request
+    /// and proxy logs keep.
     /// </summary>
-    [HttpGet("Telemetry/PreviewLogs")]
+    [HttpPost("Telemetry/PreviewLogs")]
     [Authorize(Policy = "RequiresElevation")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult PreviewLogs()
+    public ActionResult PreviewLogs([FromBody] SendLogsRequest? request = null)
     {
-        return Content(BuildLogBundleJson(null).Json, "application/json");
+        return Content(BuildLogBundleJson(request?.Note).Json, "application/json");
     }
 
+    /// <summary>
+    /// User-initiated "send logs to developer". Uploads the bundle from
+    /// <see cref="BuildLogBundleJson"/> (recent log lines with emails masked, the current
+    /// telemetry snapshot, versions and the admin's note) to the private telemetry backend
+    /// and returns a short reference code the user can quote in a bug report. Admin-only.
+    /// Unlike telemetry this is NOT anonymous (log lines name films, shows, Jellyfin users
+    /// and Letterboxd usernames) and only runs on this explicit, disclosed action. Works
+    /// whether or not telemetry is enabled; if no telemetry instance id exists, the bundle
+    /// carries an id made once per server run, so a preview and the send that follows match.
+    /// </summary>
     [HttpPost("Telemetry/SendLogs")]
     [Authorize(Policy = "RequiresElevation")]
     [ProducesResponseType(StatusCodes.Status200OK)]
