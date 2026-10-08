@@ -53,7 +53,10 @@ public class SerializdController : JellyfinUserApiController
     public class AccountItem
     {
         public string? Email { get; set; }
+        /// <summary>Empty keeps the stored password for this email.</summary>
         public string? Password { get; set; }
+        /// <summary>The email before the edit, when the user changed it; the stored password follows. Empty means unchanged.</summary>
+        public string? OriginalEmail { get; set; }
         public bool Enabled { get; set; }
         public bool SyncFavorites { get; set; }
         public bool EnableDateFilter { get; set; }
@@ -91,7 +94,7 @@ public class SerializdController : JellyfinUserApiController
             .Select(a => new
             {
                 email = a.Email,
-                password = a.Password,
+                hasPassword = a.HasPassword,
                 enabled = a.Enabled,
                 syncFavorites = a.SyncFavorites,
                 enableDateFilter = a.EnableDateFilter,
@@ -141,32 +144,38 @@ public class SerializdController : JellyfinUserApiController
         var preserved = config.SerializdAccounts.Where(a => a.UserJellyfinId != userId).ToList();
         var previous = config.SerializdAccounts.Where(a => a.UserJellyfinId == userId).ToList();
         var canName = CallerIsAdministrator();
-        var mine = request.Accounts.Select(req => new Configuration.SerializdAccount
+        var mine = request.Accounts.Select(req =>
         {
-            UserJellyfinId = userId,
-            Email = req.Email!.Trim(),
-            Password = req.Password ?? string.Empty,
-            Enabled = req.Enabled,
-            SyncFavorites = req.SyncFavorites,
-            EnableDateFilter = req.EnableDateFilter,
-            DateFilterDays = req.DateFilterDays,
-            IsPrimary = req.IsPrimary,
-            SyncWatchlist = req.SyncWatchlist,
-            SkipPreviouslySynced = req.SkipPreviouslySynced,
-            StopOnFailure = req.StopOnFailure,
-            EnableDiaryImport = req.EnableDiaryImport,
-            AutoRequestWatchlist = req.AutoRequestWatchlist,
-            BackfillAvailableRequests = req.BackfillAvailableRequests,
-            MirrorJellyseerrWatchlist = req.MirrorJellyseerrWatchlist,
-            WatchlistName = canName
-                ? (string.IsNullOrWhiteSpace(req.WatchlistName) ? null : req.WatchlistName.Trim())
-                : Stored(req)?.WatchlistName,
-            // A client that omits the field keeps the account's stored exclusions.
-            ExcludedLibraryIds = LibraryExclusion.ResolveForSave(req.ExcludedLibraryIds, Stored(req)?.ExcludedLibraryIds),
+            var account = new Configuration.SerializdAccount
+            {
+                UserJellyfinId = userId,
+                Email = req.Email!.Trim(),
+                Password = req.Password ?? string.Empty,
+                Enabled = req.Enabled,
+                SyncFavorites = req.SyncFavorites,
+                EnableDateFilter = req.EnableDateFilter,
+                DateFilterDays = req.DateFilterDays,
+                IsPrimary = req.IsPrimary,
+                SyncWatchlist = req.SyncWatchlist,
+                SkipPreviouslySynced = req.SkipPreviouslySynced,
+                StopOnFailure = req.StopOnFailure,
+                EnableDiaryImport = req.EnableDiaryImport,
+                AutoRequestWatchlist = req.AutoRequestWatchlist,
+                BackfillAvailableRequests = req.BackfillAvailableRequests,
+                MirrorJellyseerrWatchlist = req.MirrorJellyseerrWatchlist,
+                WatchlistName = canName
+                    ? (string.IsNullOrWhiteSpace(req.WatchlistName) ? null : req.WatchlistName.Trim())
+                    : Stored(req)?.WatchlistName,
+                // A client that omits the field keeps the account's stored exclusions.
+                ExcludedLibraryIds = LibraryExclusion.ResolveForSave(req.ExcludedLibraryIds, Stored(req)?.ExcludedLibraryIds),
+            };
+            account.KeepSecretsFrom(Stored(req));
+            return account;
         }).ToList();
 
+        // A changed email names the one it started from, so the stored secret and settings follow it.
         SerializdAccount? Stored(AccountItem req)
-            => previous.FirstOrDefault(p => string.Equals(p.Email, req.Email!.Trim(), StringComparison.OrdinalIgnoreCase));
+            => previous.FirstOrDefault(p => string.Equals(p.Email?.Trim(), SecretMerge.OriginalOr(req.OriginalEmail, req.Email!).Trim(), StringComparison.OrdinalIgnoreCase));
 
         config.SerializdAccounts.Clear();
         config.SerializdAccounts.AddRange(preserved);
@@ -212,7 +221,14 @@ public class SerializdController : JellyfinUserApiController
     {
         public string? Email { get; set; }
 
+        /// <summary>Empty uses the stored password of the account with this email.</summary>
         public string? Password { get; set; }
+
+        /// <summary>Owner of the stored account to fall back to. Honoured for administrators only.</summary>
+        public string? UserJellyfinId { get; set; }
+
+        /// <summary>The stored account's email when the form changed it; empty means <see cref="Email"/>.</summary>
+        public string? OriginalEmail { get; set; }
     }
 
     public class ReviewRequest
@@ -309,7 +325,14 @@ public class SerializdController : JellyfinUserApiController
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult> Verify([FromBody] VerifyRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request?.Email) || string.IsNullOrWhiteSpace(request.Password))
+        if (string.IsNullOrWhiteSpace(request?.Email))
+            return BadRequest(new { error = "Email and password are required." });
+
+        var password = string.IsNullOrWhiteSpace(request.Password)
+            ? Plugin.Instance!.Configuration.FindStoredSerializd(GetCredentialOwnerId(request.UserJellyfinId) ?? string.Empty,
+                SecretMerge.OriginalOr(request.OriginalEmail, request.Email))?.Password
+            : request.Password;
+        if (string.IsNullOrWhiteSpace(password))
             return BadRequest(new { error = "Email and password are required." });
 
         var limiterKey = GetCurrentUserId() ?? string.Empty;
@@ -324,12 +347,12 @@ public class SerializdController : JellyfinUserApiController
             string? username;
             if (VerifyOverrideForTesting != null)
             {
-                username = await VerifyOverrideForTesting(_logger, request.Email, request.Password).ConfigureAwait(false);
+                username = await VerifyOverrideForTesting(_logger, request.Email, password).ConfigureAwait(false);
             }
             else
             {
                 using var client = new SerializdApiClient(_logger);
-                username = await client.VerifyLoginAsync(request.Email, request.Password).ConfigureAwait(false);
+                username = await client.VerifyLoginAsync(request.Email, password).ConfigureAwait(false);
             }
 
             LoginCheckLimiter.Serializd.Refund(limiterKey, stamp);
