@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.10.10.0",
+        "changelog": "The Jellyscribe pages now work properly on a phone, by keyboard and with a screen reader, and they follow your Jellyfin theme. The admin settings page no longer runs off the side of a phone screen, and on a phone each activity row shows its date under the title, an idea from Wouter Stulp. The section menu, the star rating and the account and review windows can all be used with the keyboard. The windows now behave as proper dialogs: they keep focus inside, close with Escape and return you to where you were. Every field is labelled for screen readers. Thanks to Wouter Stulp, buttons and small text are much easier to read, disabled buttons look disabled, and the pages no longer restyle the rest of Jellyfin. The pages now switch between light and dark with your Jellyfin theme instead of your device's setting, and in light mode every status colour is readable. \"Back to Jellyfin\" now works on servers that live under a sub-path such as /jellyfin, and returns you to the page you came from without reloading.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.10.10/jellyfin-plugin-letterboxd-v2.10.10.zip",
+        "checksum": "d643c72307d5e1fc2a84b71b6a49e238",
+        "timestamp": "2026-10-08T02:46:53Z"
+      },
+      {
         "version": "2.10.9.0",
         "changelog": "The Jellyscribe dashboards now keep your accounts safe when something goes wrong. If your accounts or activity can't be loaded, the page says so and offers Retry instead of showing an empty list or zeros, so a save can no longer wipe your linked diaries. A failed or repeated Save never adds an account twice, and Remove now asks you to confirm in the page and only removes the account once the server has. Every save, sync, login check and review now tells you when it fails and why, rather than hanging on \"Saving…\" or claiming everything was up to date, and a sync whose progress can't be read stops with a clear message. A review with only a star rating now sets your Letterboxd rating instead of always failing. A review that lands on some of your accounts says which ones it missed. Review is no longer offered on rows that can't be reviewed. The rewatch date defaults to your own local date, and selecting text in a modal no longer closes it. On the admin dashboard, saving settings no longer undoes account changes your users made in the meantime, Sync all now also runs the TV sync for every user, and the overview is labelled as your own activity. Opening Jellyscribe from the sidebar while the admin settings page is still loaded now works. Thanks to Wouter Stulp, whose fixes for showing load and save failures and for reporting the Integrations save result are included.",
         "targetAbi": "10.11.9.0",
