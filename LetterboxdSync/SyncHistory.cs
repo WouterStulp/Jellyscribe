@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -57,7 +58,39 @@ public class SyncEvent
     public SyncStatus Status { get; set; }
     public string? Error { get; set; }
     public string? Source { get; set; }
+
+    /// <summary>
+    /// The Letterboxd account (username) the event was for. One Jellyfin user can link several
+    /// accounts, each with its own diary, so every diary lookup scopes by it. Null on rows written
+    /// before it existed; lookups treat those as belonging to every account of the user (see
+    /// <see cref="SyncHistory.MatchesAccount"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Account { get; set; }
+
+    /// <summary>
+    /// True on a Failed event whose cause will not change on retry (Letterboxd has no film for the
+    /// TMDb id). Only these count toward abandoning a film; a network error, a Cloudflare block or
+    /// an outage never does. False on every row written before it existed.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PermanentFailure { get; set; }
+
+    /// <summary>
+    /// True on a Failed event from a run in which every film tried failed: an account or service
+    /// outage. Such failures count toward nothing (see <see cref="SyncHistory.MarkOutage"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Outage { get; set; }
 }
+
+/// <summary>
+/// The unbroken run of Failed events at the tail of one film's history for one account.
+/// <paramref name="Permanent"/> counts "not found" failures; <paramref name="Transient"/> counts
+/// the others outside outage runs, and <paramref name="TransientDays"/> the distinct UTC days
+/// they fell on.
+/// </summary>
+public readonly record struct FailureStreak(int Permanent, int Transient, int TransientDays);
 
 public static class SyncHistory
 {
@@ -89,6 +122,55 @@ public static class SyncHistory
         => !string.IsNullOrEmpty(e.UserId) && !string.IsNullOrEmpty(userId)
             ? string.Equals(e.UserId, userId, StringComparison.OrdinalIgnoreCase)
             : string.Equals(e.Username, username, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Error text of a Skipped event recorded because Letterboxd's diary already had the film on
+    /// that viewing date. Such a viewing is settled: <see cref="WasSuccessfullySynced"/> counts it,
+    /// so the next run does not ask Letterboxd again.
+    /// </summary>
+    public const string AlreadyOnDiaryError = "Already on Letterboxd diary for this date";
+
+    /// <summary>Start of the Error text of a Skipped event the local duplicate backstop recorded.
+    /// Settled the same way as <see cref="AlreadyOnDiaryError"/>.</summary>
+    public const string BackstopErrorPrefix = "Local history shows prior sync on ";
+
+    /// <summary>
+    /// True when the event is for <paramref name="account"/>. A row with no account predates
+    /// account scoping and matches every account of its user, the same legacy fallback
+    /// <see cref="Serializd.SerializdSyncHistory"/> uses, so an upgrade never makes a film already
+    /// logged look unlogged. A null <paramref name="account"/> matches every row.
+    /// </summary>
+    internal static bool MatchesAccount(SyncEvent e, string? account)
+        => string.IsNullOrEmpty(account) || string.IsNullOrEmpty(e.Account)
+            || string.Equals(e.Account, account, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSettledSkip(SyncEvent e)
+        => e.Status == SyncStatus.Skipped && e.Error != null
+            && (string.Equals(e.Error, AlreadyOnDiaryError, StringComparison.Ordinal)
+                || e.Error.StartsWith(BackstopErrorPrefix, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Marks events this process just recorded (the same instances <see cref="Record"/> was given,
+    /// which it keeps) as part of an outage run and rewrites the store. The runner calls it when
+    /// every film it tried in a run failed: that is an account or service outage, not a fact
+    /// about the films, so none of it may count toward abandonment.
+    /// </summary>
+    public static void MarkOutage(IReadOnlyCollection<SyncEvent> recorded)
+    {
+        if (recorded.Count == 0) return;
+        lock (_lock)
+        {
+            var changed = false;
+            foreach (var e in recorded)
+            {
+                if (e.Outage && !e.PermanentFailure) continue;
+                e.PermanentFailure = false;
+                e.Outage = true;
+                changed = true;
+            }
+            if (changed && _events != null) SaveAllEvents();
+        }
+    }
 
     public static int StampMissingUserIds()
     {
@@ -282,30 +364,31 @@ public static class SyncHistory
     /// Most recent status recorded for this user/film, or null if there's no history.
     /// Used to prioritise previously-failed films at the head of the sync queue.
     /// </summary>
-    public static SyncStatus? GetLastStatusForFilm(string username, int tmdbId)
+    public static SyncStatus? GetLastStatusForFilm(string username, int tmdbId, string? account = null)
     {
         lock (_lock)
         {
-            return GetLastStatusForFilm(LoadEvents(), username, tmdbId);
+            return GetLastStatusForFilm(LoadEvents(), username, tmdbId, account);
         }
     }
 
     /// <summary>
-    /// True if we have a Success or Rewatch entry for this user/film combo whose ViewingDate
-    /// matches the current viewing date. Used to short-circuit the duplicate check without
-    /// making an HTTP call to Letterboxd.
+    /// True if this user/account/film viewing date is already settled: a Success or Rewatch entry,
+    /// or a skip because Letterboxd's diary already had it or the local backstop refused it, whose
+    /// ViewingDate matches. Used to short-circuit the duplicate check without making an HTTP call
+    /// to Letterboxd.
     /// </summary>
-    public static bool WasSuccessfullySynced(string username, int tmdbId, DateTime viewingDate)
+    public static bool WasSuccessfullySynced(string username, int tmdbId, DateTime viewingDate, string? account = null)
     {
         lock (_lock)
         {
-            return WasSuccessfullySynced(LoadEvents(), username, tmdbId, viewingDate);
+            return WasSuccessfullySynced(LoadEvents(), username, tmdbId, viewingDate, account);
         }
     }
 
     // Pure overloads, exposed for unit testing without touching the on-disk store.
 
-    internal static SyncStatus? GetLastStatusForFilm(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    internal static SyncStatus? GetLastStatusForFilm(IEnumerable<SyncEvent> events, string username, int tmdbId, string? account = null)
     {
         var userId = ResolveUserId(username);
         SyncEvent? latest = null;
@@ -313,6 +396,7 @@ public static class SyncHistory
         {
             if (e.TmdbId != tmdbId) continue;
             if (!BelongsTo(e, username, userId)) continue;
+            if (!MatchesAccount(e, account)) continue;
             // A rating push says nothing about the film's diary sync, which is what callers rank by.
             if (e.Status == SyncStatus.Rated) continue;
             if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
@@ -321,39 +405,62 @@ public static class SyncHistory
     }
 
     /// <summary>
-    /// Number of consecutive Failed events at the tail of this user/film's history
-    /// (most recent first), stopping at the first non-Failed event. The runner uses this
-    /// to abandon a film that fails on every run instead of retrying it indefinitely,
-    /// BuildSyncQueue otherwise pushes previously-failed films to the head of the queue.
+    /// Number of consecutive permanent failures (<see cref="SyncEvent.PermanentFailure"/>) at the
+    /// tail of this user/account/film's history, most recent first, stopping at the first
+    /// non-Failed event. The runner uses this to abandon a film Letterboxd keeps saying it does
+    /// not have, instead of retrying it on every run. Transient failures (network, Cloudflare,
+    /// rate limits, an outage) neither continue nor break the streak, so a bad few days can never
+    /// abandon a film, and any later success or skip resets it.
     /// </summary>
-    public static int GetConsecutiveFailureCount(string username, int tmdbId)
+    public static int GetConsecutiveFailureCount(string username, int tmdbId, string? account = null)
+        => GetFailureStreak(username, tmdbId, account).Permanent;
+
+    internal static int GetConsecutiveFailureCount(IEnumerable<SyncEvent> events, string username, int tmdbId, string? account = null)
+        => GetFailureStreak(events, username, tmdbId, account).Permanent;
+
+    /// <summary>
+    /// The trailing run of Failed events for this user/account/film, most recent first, ending at
+    /// the first non-Failed event (so any later success or skip resets it). One pass gives the
+    /// runner both abandonment signals.
+    /// </summary>
+    public static FailureStreak GetFailureStreak(string username, int tmdbId, string? account = null)
     {
         lock (_lock)
         {
-            return GetConsecutiveFailureCount(LoadEvents(), username, tmdbId);
+            return GetFailureStreak(LoadEvents(), username, tmdbId, account);
         }
     }
 
-    internal static int GetConsecutiveFailureCount(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    internal static FailureStreak GetFailureStreak(IEnumerable<SyncEvent> events, string username, int tmdbId, string? account = null)
     {
         // Rated events are skipped: a rating push neither continues nor breaks the film's diary
         // failure streak.
         var userId = ResolveUserId(username);
         var ordered = events
             .Where(e => e.TmdbId == tmdbId && BelongsTo(e, username, userId)
+                && MatchesAccount(e, account)
                 && e.Status != SyncStatus.Rated)
             .OrderByDescending(e => e.Timestamp);
 
-        var count = 0;
+        int permanent = 0, transient = 0;
+        var days = new HashSet<DateTime>();
         foreach (var e in ordered)
         {
             if (e.Status != SyncStatus.Failed) break;
-            count++;
+            if (e.PermanentFailure)
+            {
+                permanent++;
+            }
+            else if (!e.Outage)
+            {
+                transient++;
+                days.Add(e.Timestamp.Date);
+            }
         }
-        return count;
+        return new FailureStreak(permanent, transient, days.Count);
     }
 
-    internal static bool WasSuccessfullySynced(IEnumerable<SyncEvent> events, string username, int tmdbId, DateTime viewingDate)
+    internal static bool WasSuccessfullySynced(IEnumerable<SyncEvent> events, string username, int tmdbId, DateTime viewingDate, string? account = null)
     {
         var userId = ResolveUserId(username);
         var target = viewingDate.Date;
@@ -361,28 +468,27 @@ public static class SyncHistory
         {
             if (e.TmdbId != tmdbId) continue;
             if (!BelongsTo(e, username, userId)) continue;
-            if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
+            if (!MatchesAccount(e, account)) continue;
+            if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch && !IsSettledSkip(e)) continue;
             if (e.ViewingDate?.Date == target) return true;
         }
         return false;
     }
 
     /// <summary>
-    /// ViewingDate of the most recent Success or Rewatch entry for this user/film, or null
-    /// if there isn't one. Used as a local-history backstop against duplicates that can
-    /// otherwise be created when Letterboxd's own duplicate-check call fails (Cloudflare
-    /// 403 returns null lastDate, which the original IsDuplicate check then treats as
-    /// "not a duplicate").
+    /// ViewingDate of the most recent Success or Rewatch entry for this user/account/film, or
+    /// null if there isn't one. Used as a local-history backstop against duplicates when
+    /// Letterboxd's diary does not yet show an entry that was just written.
     /// </summary>
-    public static DateTime? GetLastSuccessfulSyncDate(string username, int tmdbId)
+    public static DateTime? GetLastSuccessfulSyncDate(string username, int tmdbId, string? account = null)
     {
         lock (_lock)
         {
-            return GetLastSuccessfulSyncDate(LoadEvents(), username, tmdbId);
+            return GetLastSuccessfulSyncDate(LoadEvents(), username, tmdbId, account);
         }
     }
 
-    internal static DateTime? GetLastSuccessfulSyncDate(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    internal static DateTime? GetLastSuccessfulSyncDate(IEnumerable<SyncEvent> events, string username, int tmdbId, string? account = null)
     {
         var userId = ResolveUserId(username);
         SyncEvent? latest = null;
@@ -390,6 +496,7 @@ public static class SyncHistory
         {
             if (e.TmdbId != tmdbId) continue;
             if (!BelongsTo(e, username, userId)) continue;
+            if (!MatchesAccount(e, account)) continue;
             if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
             if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
         }

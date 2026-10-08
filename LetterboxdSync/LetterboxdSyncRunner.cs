@@ -49,11 +49,30 @@ public class LetterboxdSyncRunner
     public static bool IsRunning => SyncGate.IsRunning;
 
     /// <summary>
-    /// After this many consecutive Failed sync events for the same film, stop retrying it.
-    /// Rides out transient errors (Cloudflare 403, rate limits) over a few runs, then gives
-    /// up so a permanently unsyncable film doesn't sit at the head of the queue forever.
+    /// After this many consecutive permanent failures for the same film (Letterboxd has no film
+    /// for its TMDb id), stop retrying it. Transient errors (Cloudflare 403, rate limits, an
+    /// outage) never count, see <see cref="SyncHistory.GetConsecutiveFailureCount(string, int, string?)"/>.
     /// </summary>
     internal const int MaxConsecutiveSyncFailures = 3;
+
+    /// <summary>
+    /// A film whose other failures (an error from Letterboxd on that film alone, while other films
+    /// sync) keep coming back is also given up on, but only after this many in a row spread over
+    /// at least <see cref="MinTransientFailureDays"/> distinct days, so a bad week of Letterboxd
+    /// trouble cannot do it. Failures from outage runs never count.
+    /// </summary>
+    internal const int MaxTransientSyncFailures = 10;
+
+    internal const int MinTransientFailureDays = 7;
+
+    /// <summary>
+    /// A run in which at least this many films were tried, every one failed, and at least one
+    /// failure was transient (a block, an error status) is treated as an account or service
+    /// outage: none of its failures count toward abandonment. A run whose films all failed only
+    /// with "not found" is not an outage; it is the usual state once everything findable has
+    /// synced, and those films must still reach the abandonment threshold.
+    /// </summary>
+    internal const int OutageMinAttempts = 2;
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
 
@@ -246,15 +265,15 @@ public class LetterboxdSyncRunner
             return;
         }
 
-        // Abandon films that have failed to sync repeatedly. BuildSyncQueue pushes
-        // previously-failed films to the head of the queue, so a film that fails every run
-        // (not on Letterboxd, bad TMDb match, region-locked) would retry forever. After
-        // MaxConsecutiveSyncFailures consecutive failures, leave it alone.
+        // Abandon films Letterboxd keeps saying it does not have. BuildSyncQueue pushes
+        // previously-failed films to the head of the queue, so such a film would retry forever.
+        // After MaxConsecutiveSyncFailures permanent failures for this account, leave it alone.
+        var lbAccount = account.LetterboxdUsername;
         var abandonedFailures = 0;
         movies = movies.Where(m =>
         {
             if (!int.TryParse(m.GetProviderId(MetadataProvider.Tmdb), out var tmdbId)) return true;
-            if (SyncHistory.GetConsecutiveFailureCount(user.Username ?? string.Empty, tmdbId) >= MaxConsecutiveSyncFailures)
+            if (ShouldAbandon(SyncHistory.GetFailureStreak(user.Username ?? string.Empty, tmdbId, lbAccount)))
             {
                 abandonedFailures++;
                 return false;
@@ -264,8 +283,8 @@ public class LetterboxdSyncRunner
 
         if (abandonedFailures > 0)
             _logger.LogInformation(
-                "Skipping {Count} films for {Username}: {Threshold}+ consecutive sync failures, no longer retrying",
-                abandonedFailures, user.Username, MaxConsecutiveSyncFailures);
+                "Skipping {Count} films for {Username} as {LbUser}: failing on every run (not found on Letterboxd {Threshold}+ times, or erroring for {Days}+ days), no longer retrying",
+                abandonedFailures, user.Username, lbAccount, MaxConsecutiveSyncFailures, MinTransientFailureDays);
 
         if (movies.Count == 0)
         {
@@ -275,7 +294,7 @@ public class LetterboxdSyncRunner
 
         // Filter out anything we already successfully synced for this exact viewing date,
         // so we don't burn Cloudflare quota re-checking films that are definitely on Letterboxd.
-        // Sort what's left so previously-failed/skipped films come first, if rate limits hit,
+        // Sort what's left so previously-failed films come first, if rate limits hit,
         // we make progress on the backlog instead of repeatedly retrying the same head of queue.
         int preFilterCount = movies.Count;
         int locallySkipped = 0;
@@ -286,15 +305,14 @@ public class LetterboxdSyncRunner
             {
                 int? tid = int.TryParse(m.GetProviderId(MetadataProvider.Tmdb), out var v) ? v : null;
                 var ud = _userDataManager.GetUserData(user, m);
-                var viewing = ud?.LastPlayedDate?.Date ?? DateTime.Now.Date;
-                return (Item: m, TmdbId: tid, ViewingDate: viewing);
+                return (Item: m, TmdbId: tid, ViewingDate: ViewingDateFor(ud?.LastPlayedDate));
             });
 
             var (queue, skippedLocally) = BuildSyncQueue(
                 candidates,
                 user.Username ?? string.Empty,
-                SyncHistory.WasSuccessfullySynced,
-                SyncHistory.GetLastStatusForFilm);
+                (u, t, d) => SyncHistory.WasSuccessfullySynced(u, t, d, lbAccount),
+                (u, t) => SyncHistory.GetLastStatusForFilm(u, t, lbAccount));
             movies = queue;
             locallySkipped = skippedLocally;
         }
@@ -320,6 +338,7 @@ public class LetterboxdSyncRunner
             {
                 FilmTitle = $"Account {account.LetterboxdUsername} paused",
                 Username = user.Username ?? string.Empty,
+                Account = lbAccount,
                 Timestamp = DateTime.UtcNow,
                 Status = SyncStatus.Skipped,
                 Error = $"Login failing since {since:yyyy-MM-dd}; sync paused until credentials are re-saved",
@@ -356,6 +375,8 @@ public class LetterboxdSyncRunner
         var synced = 0;
         var skipped = 0;
         var failed = 0;
+        var attempted = 0;
+        var failures = new List<SyncEvent>();
 
         SyncProgress.SetPhase(SyncProgress.TrackLetterboxd, "Syncing films");
         SyncProgress.SetTotal(SyncProgress.TrackLetterboxd, movies.Count);
@@ -375,35 +396,44 @@ public class LetterboxdSyncRunner
                     Timestamp = DateTime.UtcNow,
                     Status = SyncStatus.Skipped,
                     Error = "No TMDb ID",
-                    Source = source
+                    Source = source,
+                    Account = lbAccount
                 });
                 skipped++;
                 continue;
             }
 
+            attempted++;
             try
             {
+                using var filmLock = await FilmSyncLock.AcquireAsync(breakerUserId, lbAccount, tmdbId, cancellationToken)
+                    .ConfigureAwait(false);
+
                 var film = await service.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
                 await Task.Delay(3000 + Random.Shared.Next(2000), cancellationToken).ConfigureAwait(false);
 
                 var userData = _userDataManager.GetUserData(user, movie);
-                var viewingDate = userData?.LastPlayedDate?.Date ?? DateTime.Now.Date;
+                var viewingDate = ViewingDateFor(userData?.LastPlayedDate);
+                var viewingDateStr = viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-                var diaryInfo = await service.GetDiaryInfoAsync(film.FilmId, account.LetterboxdUsername).ConfigureAwait(false);
+                // Throws when the check itself fails, which lands in the catch below as a
+                // retryable failure: an unanswered check must never be read as "not logged".
+                var diaryInfo = await service.GetDiaryInfoAsync(film.FilmId, lbAccount).ConfigureAwait(false);
                 if (Helpers.IsDuplicate(diaryInfo.LastDate, viewingDate))
                 {
                     _logger.LogInformation("Skipping {Title} (TMDb:{TmdbId}): already on Letterboxd diary for {Date}",
-                        movie.Name, tmdbId, viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                        movie.Name, tmdbId, viewingDateStr);
                     SyncHistory.Record(new SyncEvent
                     {
                         FilmTitle = movie.Name,
                         FilmSlug = film.Slug,
                         TmdbId = tmdbId,
                         Username = user.Username ?? string.Empty,
+                        Account = lbAccount,
                         Timestamp = DateTime.UtcNow,
                         ViewingDate = viewingDate,
                         Status = SyncStatus.Skipped,
-                        Error = "Already on Letterboxd diary for this date",
+                        Error = SyncHistory.AlreadyOnDiaryError,
                         Source = source
                     });
                     skipped++;
@@ -411,12 +441,10 @@ public class LetterboxdSyncRunner
                     continue;
                 }
 
-                // Local-history backstop. The Letterboxd-side IsDuplicate check above silently
-                // returns false when GetDiaryInfo fails (e.g. Cloudflare 403 -> null lastDate),
-                // which used to let MarkAsWatched create a duplicate entry. Cross-check our own
-                // append-only log: if we have a recent successful sync that is not far enough
-                // back to count as a real rewatch, refuse rather than risk a duplicate.
-                var localLastSync = SyncHistory.GetLastSuccessfulSyncDate(user.Username ?? string.Empty, tmdbId);
+                // Local-history backstop: if our own log has a recent successful sync for this
+                // account that is not far enough back to count as a real rewatch, refuse rather
+                // than risk a duplicate (Letterboxd's diary can lag behind a write just made).
+                var localLastSync = SyncHistory.GetLastSuccessfulSyncDate(user.Username ?? string.Empty, tmdbId, lbAccount);
                 if (localLastSync.HasValue && !Helpers.IsRewatch(localLastSync, viewingDate))
                 {
                     var lastSyncStr = localLastSync.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -428,10 +456,11 @@ public class LetterboxdSyncRunner
                         FilmSlug = film.Slug,
                         TmdbId = tmdbId,
                         Username = user.Username ?? string.Empty,
+                        Account = lbAccount,
                         Timestamp = DateTime.UtcNow,
                         ViewingDate = viewingDate,
                         Status = SyncStatus.Skipped,
-                        Error = $"Local history shows prior sync on {lastSyncStr}, suppressing potential duplicate",
+                        Error = $"{SyncHistory.BackstopErrorPrefix}{lastSyncStr}, suppressing potential duplicate",
                         Source = source
                     });
                     skipped++;
@@ -439,44 +468,56 @@ public class LetterboxdSyncRunner
                     continue;
                 }
 
-                bool isRewatch = false;
+                // Same rule as real-time sync: an earlier diary entry more than a day before this
+                // viewing makes it a rewatch.
+                bool isRewatch = Helpers.IsRewatch(diaryInfo.LastDate, viewingDate);
                 bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
                 double? lbRating = Helpers.MapRating(userData?.Rating);
 
-                await service.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked,
+                await service.MarkAsWatchedAsync(film.Slug, film.FilmId, viewingDate, liked,
                     film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
 
-                _logger.LogInformation("Logged {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",
-                    movie.Name, tmdbId, user.Username,
-                    viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                _logger.LogInformation("{Action} {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} as {LbUser} on {Date}",
+                    isRewatch ? "Logged rewatch of" : "Logged", movie.Name, tmdbId, user.Username, lbAccount, viewingDateStr);
                 SyncHistory.Record(new SyncEvent
                 {
                     FilmTitle = movie.Name,
                     FilmSlug = film.Slug,
                     TmdbId = tmdbId,
                     Username = user.Username ?? string.Empty,
+                    Account = lbAccount,
                     Timestamp = DateTime.UtcNow,
                     ViewingDate = viewingDate,
-                    Status = SyncStatus.Success,
+                    Status = isRewatch ? SyncStatus.Rewatch : SyncStatus.Success,
                     Source = source
                 });
                 synced++;
                 SyncProgress.IncrementProcessed(SyncProgress.TrackLetterboxd);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Shutdown or a cancelled task, not a failure of this film: record nothing.
+                SyncProgress.Complete(SyncProgress.TrackLetterboxd);
+                throw;
+            }
             catch (Exception ex)
             {
-                _logger.LogError("Failed to sync {Title} (TMDb:{TmdbId}) for {Username}: {Message}",
-                    movie.Name, tmdbId, user.Username, ex.Message);
-                SyncHistory.Record(new SyncEvent
+                _logger.LogError("Failed to sync {Title} (TMDb:{TmdbId}) for {Username} as {LbUser}: {Message}",
+                    movie.Name, tmdbId, user.Username, lbAccount, ex.Message);
+                var failure = new SyncEvent
                 {
                     FilmTitle = movie.Name,
                     TmdbId = tmdbId,
                     Username = user.Username ?? string.Empty,
+                    Account = lbAccount,
                     Timestamp = DateTime.UtcNow,
                     Status = SyncStatus.Failed,
                     Error = ex.Message,
-                    Source = source
-                });
+                    Source = source,
+                    PermanentFailure = ex is FilmNotFoundException
+                };
+                SyncHistory.Record(failure);
+                failures.Add(failure);
                 failed++;
                 SyncProgress.IncrementProcessed(SyncProgress.TrackLetterboxd);
 
@@ -489,13 +530,35 @@ public class LetterboxdSyncRunner
             }
         }
 
+        // Every film tried failed and Letterboxd was erroring: a bad run for the service or this
+        // account says nothing about the films, so none of these failures may count toward
+        // abandoning a film, including any "not found" answers given during it.
+        if (attempted >= OutageMinAttempts && failed == attempted && failures.Any(f => !f.PermanentFailure))
+        {
+            _logger.LogWarning("Every one of the {Count} films tried for {Username} as {LbUser} failed; treating the run as an outage, so none of them counts toward giving up on a film",
+                attempted, user.Username, lbAccount);
+            SyncHistory.MarkOutage(failures);
+        }
+
         _logger.LogInformation("Letterboxd sync complete for {Username}: {Synced} synced, {Skipped} skipped (+{LocalSkipped} skipped locally), {Failed} failed",
             user.Username, synced, skipped, locallySkipped, failed);
         SyncProgress.Complete(SyncProgress.TrackLetterboxd);
     }
 
+    internal static bool ShouldAbandon(FailureStreak streak)
+        => streak.Permanent >= MaxConsecutiveSyncFailures
+            || (streak.Transient >= MaxTransientSyncFailures && streak.TransientDays >= MinTransientFailureDays);
+
     /// <summary>
-    /// Filter out already-synced candidates and order the rest with previously-failed/skipped first,
+    /// The viewing date for a Jellyfin play timestamp: its day in the server's time zone, the same
+    /// day real-time sync logs. The no-plausible-date filter runs first, so the fallback to today
+    /// is only a guard.
+    /// </summary>
+    internal static DateTime ViewingDateFor(DateTime? lastPlayedUtc)
+        => Helpers.ToLocalViewingDate(lastPlayedUtc ?? DateTime.UtcNow);
+
+    /// <summary>
+    /// Filter out already-synced candidates and order the rest with previously-failed first,
     /// never-attempted next. Items with no TMDb ID stay in the queue at the lowest priority so the
     /// main loop can record an explicit skip event with reason. Pure function for testability.
     /// </summary>
@@ -523,8 +586,11 @@ public class LetterboxdSyncRunner
                 continue;
             }
 
+            // Only a failure jumps the queue. A skip is settled or deliberate (already on the
+            // diary, no TMDb id, account paused), so putting it first would only spend the run's
+            // Letterboxd budget on films that need nothing.
             var prev = lastStatus(username, tid);
-            var priority = (prev == SyncStatus.Failed || prev == SyncStatus.Skipped) ? 0 : 1;
+            var priority = prev == SyncStatus.Failed ? 0 : 1;
             remaining.Add((c.Item, priority));
         }
 
