@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.12.0.0",
+        "changelog": "The activity list now reaches your whole history. A search box above the status filters finds any title. A \"Load older history\" button pages back through everything Jellyscribe has logged, instead of the list quietly stopping after a couple of hundred entries. A binge of one show folds into a single row that shows the episode range and any failures, and opens with a click or the keyboard. Prev and Next switch off at the ends. The same works on the admin dashboard's overview and its Activity tab. In the account dialog, the watchlist option's description now changes when you switch a new account between Serializd and Letterboxd, and the service names read \"Serializd: TV\" and \"Letterboxd: Film\". Thanks to Wouter Stulp, whose search, episode grouping and older-history work is included.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.12.0/jellyfin-plugin-letterboxd-v2.12.0.zip",
+        "checksum": "c224871e3e906b90489758ea2d4a5111",
+        "timestamp": "2026-10-08T03:05:35Z"
+      },
+      {
         "version": "2.11.1.0",
         "changelog": "Jellyscribe is steadier when Letterboxd or Serializd ask it to slow down. A rate-limit pause is honoured for up to a minute. Anything longer skips the film or episode until the next sync, and a Letterboxd sync that keeps hitting the limit stops early instead of trying every film. Letterboxd retries are now accepted instead of refused as a repeat. Stopping a sync, or restarting Jellyfin, no longer waits out a long pause. When you sign in with your Letterboxd website login, a TV series that Letterboxd lists as a film can no longer be mistaken for a movie with the same TMDb number, so the wrong film is never marked watched or rated. A Serializd review of an episode now lands on the same episode a log would: for a show Serializd lists as a single season, it goes to the right episode of that season, and it is refused if Serializd has no such episode. The activity lists on both dashboards show the full page they ask for again.",
         "targetAbi": "10.11.9.0",
