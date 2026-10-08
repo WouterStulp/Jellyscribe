@@ -72,6 +72,13 @@ public class LetterboxdApiClient : ILetterboxdService
 
     internal HttpClient HttpForTesting => _http;
 
+    /// <summary>The signed-in member's id (an id, never a secret), for tests and the live suite's output.</summary>
+    internal string MemberIdForTesting => _memberId;
+
+    /// <summary>Test hook: put an entry in the shared token cache, as an older sign-in might have left it.</summary>
+    internal static void SeedTokenCacheForTesting(string username, string password, TokenInfo info)
+        => TokenCache[Helpers.TokenCacheKey(username, password)] = info;
+
     private static HttpClient WithDefaultHeaders(HttpClient http)
     {
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -83,8 +90,10 @@ public class LetterboxdApiClient : ILetterboxdService
     {
         _cacheKey = Helpers.TokenCacheKey(username, password);
 
-        // Check token cache first
-        if (TokenCache.TryGetValue(_cacheKey, out var cached) && cached.ExpiresAtUtc > DateTime.UtcNow.AddMinutes(5))
+        // Check token cache first. An entry is only ever stored with its member id, but one without
+        // it is never reused: every member-scoped call would send "member=" and get a 404.
+        if (TokenCache.TryGetValue(_cacheKey, out var cached) && cached.ExpiresAtUtc > DateTime.UtcNow.AddMinutes(5)
+            && !string.IsNullOrEmpty(cached.MemberId))
         {
             _accessToken = cached.AccessToken;
             _memberId = cached.MemberId;
@@ -119,10 +128,7 @@ public class LetterboxdApiClient : ILetterboxdService
         }
 
         var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        ParseTokenResponse(json);
-
-        // Fetch member ID
-        await FetchMemberIdAsync().ConfigureAwait(false);
+        await CompleteSignInAsync(json).ConfigureAwait(false);
 
         _logger.LogInformation("Authenticated with Letterboxd API as {Username}", username);
     }
@@ -274,6 +280,112 @@ public class LetterboxdApiClient : ILetterboxdService
             var errorBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             throw new Exception($"Failed to post review: {response.StatusCode} {errorBody}");
         }
+    }
+
+    /// <summary>
+    /// Finds the member's log entry for the film on <paramref name="diaryDate"/> and updates it
+    /// with <c>PATCH /log-entry/{id}</c> (a LogEntryUpdateRequest carrying only <c>review</c> and,
+    /// when given, <c>rating</c>), so the entry keeps its date, like and tags. An entry that
+    /// already has a review is never overwritten.
+    /// </summary>
+    public async Task<ReviewAttachResult> AddReviewToDiaryEntryAsync(int tmdbId, DateTime diaryDate, string reviewText,
+        bool containsSpoilers, double? rating)
+    {
+        EnsureAuthenticated();
+
+        var film = await LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
+        var onDate = await EntriesOnAsync(film.FilmId, diaryDate).ConfigureAwait(false);
+        if (onDate.Count == 0)
+        {
+            // Diary reads lag writes: an entry the sync logged moments ago may not be listed yet,
+            // and "no entry" makes the caller log a second one. Look once more before saying so.
+            await Task.Delay(EntryReadRetryDelay).ConfigureAwait(false);
+            onDate = await EntriesOnAsync(film.FilmId, diaryDate).ConfigureAwait(false);
+            if (onDate.Count == 0)
+                return ReviewAttachResult.NoEntry;
+        }
+
+        var target = onDate.FirstOrDefault(e => !e.HasReview);
+        if (target == null)
+            return ReviewAttachResult.AlreadyReviewed;
+
+        var bodyObj = new Dictionary<string, object>
+        {
+            ["review"] = new Dictionary<string, object>
+            {
+                ["text"] = reviewText,
+                ["containsSpoilers"] = containsSpoilers
+            }
+        };
+        if (rating.HasValue)
+            bodyObj["rating"] = rating.Value;
+
+        var response = await SendSignedAsync(HttpMethod.Patch, $"/log-entry/{Uri.EscapeDataString(target.Id)}",
+            JsonSerializer.Serialize(bodyObj), "application/json", authenticated: true).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            ClearCachedToken();
+            throw new Exception("Letterboxd API token expired. Will re-authenticate on next sync.");
+        }
+
+        // A failed reply can echo the review in whatever escaping Letterboxd chose, so the error
+        // carries only the status.
+        if (!response.IsSuccessStatusCode)
+            throw new Exception($"Failed to add the review to the diary entry: {response.StatusCode}");
+
+        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+        // A LogEntryUpdateResponse reports a refused field (a rating off the scale, say) as an
+        // Error message in a 200 reply, the same shape as a film relationship update.
+        var error = ExtractRelationshipUpdateError(json);
+        if (error != null)
+            throw new Exception($"Letterboxd refused the review update: {LetterboxdHttpClient.Truncate(LetterboxdDiary.WithoutReview(error, reviewText), 300)}");
+
+        return ReviewAttachResult.Attached;
+    }
+
+    /// <summary>The wait before reading a film's diary entries a second time. Tests shorten it.</summary>
+    internal TimeSpan EntryReadRetryDelay { get; set; } = TimeSpan.FromSeconds(3);
+
+    private async Task<List<LogEntrySummary>> EntriesOnAsync(string filmLid, DateTime diaryDate)
+        => (await GetMemberLogEntriesAsync(filmLid).ConfigureAwait(false))
+            .Where(e => e.DiaryDate?.Date == diaryDate.Date)
+            .ToList();
+
+    /// <summary>One of the member's log entries for a film, as <c>GET /log-entries</c> lists it.</summary>
+    internal sealed record LogEntrySummary(string Id, DateTime? DiaryDate, bool HasReview);
+
+    /// <summary>
+    /// The member's log entries for one film (<c>GET /log-entries?member=&amp;film=</c>), every
+    /// page. A failed or incomplete read throws: reading it as "no entries" would log the film again.
+    /// </summary>
+    internal async Task<List<LogEntrySummary>> GetMemberLogEntriesAsync(string filmLid)
+    {
+        EnsureAuthenticated();
+
+        var entries = new List<LogEntrySummary>();
+        await ReadAllPagesAsync("/log-entries",
+            $"member={Uri.EscapeDataString(_memberId)}&film={Uri.EscapeDataString(filmLid)}&perPage=100",
+            "diary entries for this film",
+            item =>
+            {
+                if (!item.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String
+                    || string.IsNullOrEmpty(idEl.GetString()))
+                    return;
+
+                DateTime? date = null;
+                if (item.TryGetProperty("diaryDetails", out var details) && details.ValueKind == JsonValueKind.Object
+                    && details.TryGetProperty("diaryDate", out var dateEl) && dateEl.ValueKind == JsonValueKind.String
+                    && DateTime.TryParse(dateEl.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+                    date = parsed;
+
+                // Any review object counts, even an empty one: an entry that has one is never written over.
+                var hasReview = item.TryGetProperty("review", out var review) && review.ValueKind == JsonValueKind.Object;
+                entries.Add(new LogEntrySummary(idEl.GetString()!, date, hasReview));
+            }, CancellationToken.None).ConfigureAwait(false);
+
+        return entries;
     }
 
     public async Task SetFilmRatingAsync(string filmSlug, string filmId, double rating, CancellationToken cancellationToken = default)
@@ -641,20 +753,28 @@ public class LetterboxdApiClient : ILetterboxdService
         return Convert.ToHexStringLower(hash);
     }
 
-    private void ParseTokenResponse(string json)
+    /// <summary>
+    /// Takes the token from an /auth/token reply, reads the member id with it, and only then
+    /// caches the pair. Caching the token first left a window (and, if /me failed, an hour) in
+    /// which another sign-in of the same account reused it with no member id, so its diary reads
+    /// sent "member=" and Letterboxd answered 404.
+    /// </summary>
+    private async Task CompleteSignInAsync(string tokenJson)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
+        string refreshToken;
+        int expiresIn;
+        using (var doc = JsonDocument.Parse(tokenJson))
+        {
+            var root = doc.RootElement;
+            _accessToken = root.GetProperty("access_token").GetString()!;
+            refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() ?? string.Empty : string.Empty;
+            expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
+        }
 
-        _accessToken = root.GetProperty("access_token").GetString()!;
-        var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() ?? string.Empty : string.Empty;
-        var expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
+        _memberId = string.Empty;
+        await FetchMemberIdAsync().ConfigureAwait(false);
 
-        TokenCache[_cacheKey] = new TokenInfo(
-            _accessToken,
-            refreshToken,
-            DateTime.UtcNow.AddSeconds(expiresIn),
-            _memberId);
+        TokenCache[_cacheKey] = new TokenInfo(_accessToken, refreshToken, DateTime.UtcNow.AddSeconds(expiresIn), _memberId);
     }
 
     private async Task RefreshTokenAsync(string refreshToken)
@@ -665,8 +785,7 @@ public class LetterboxdApiClient : ILetterboxdService
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        ParseTokenResponse(json);
-        await FetchMemberIdAsync().ConfigureAwait(false);
+        await CompleteSignInAsync(json).ConfigureAwait(false);
     }
 
     private async Task FetchMemberIdAsync()
@@ -676,13 +795,10 @@ public class LetterboxdApiClient : ILetterboxdService
 
         var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
-        _memberId = doc.RootElement.GetProperty("member").GetProperty("id").GetString()!;
-
-        // Update cache with member ID
-        if (TokenCache.TryGetValue(_cacheKey, out var cached))
-        {
-            TokenCache[_cacheKey] = cached with { MemberId = _memberId };
-        }
+        var memberId = doc.RootElement.GetProperty("member").GetProperty("id").GetString();
+        if (string.IsNullOrEmpty(memberId))
+            throw new InvalidOperationException("Letterboxd's /me reply had no member id.");
+        _memberId = memberId;
     }
 
     private void ClearCachedToken()
@@ -696,6 +812,9 @@ public class LetterboxdApiClient : ILetterboxdService
     {
         if (string.IsNullOrEmpty(_accessToken))
             throw new InvalidOperationException("Not authenticated. Call AuthenticateAsync first.");
+        // Every member-scoped call needs it; without it Letterboxd answers "member=" with a 404.
+        if (string.IsNullOrEmpty(_memberId))
+            throw new InvalidOperationException("Signed in to Letterboxd without a member id. Call AuthenticateAsync again.");
     }
 
     private static string ExtractSlugFromLink(JsonElement film)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Mime;
@@ -574,6 +575,11 @@ public class LetterboxdController : JellyfinUserApiController
         if (string.IsNullOrWhiteSpace(request.ReviewText) && !request.IsRewatch && !ratingOnly)
             return BadRequest(new { error = "reviewText is required unless logging a rewatch or setting a rating" });
 
+        // The diary date goes to Letterboxd and onto the history row, which needs it to read it back.
+        if (!string.IsNullOrEmpty(request.Date)
+            && !DateTime.TryParseExact(request.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            return BadRequest(new { error = "date must be a day in the form yyyy-MM-dd" });
+
         if (ratingOnly)
         {
             var r = request.Rating!.Value;
@@ -626,24 +632,68 @@ public class LetterboxdController : JellyfinUserApiController
                     continue;
                 }
 
-                await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating, request.TmdbId)
-                    .ConfigureAwait(false);
+                // Held like the syncs hold it, so a sync of this film cannot log it between the
+                // history lookup below and the review's own history row.
+                using var filmLock = request.TmdbId is > 0
+                    ? await FilmSyncLock.AcquireAsync(userId.ToLowerInvariant(), account.LetterboxdUsername, request.TmdbId.Value).ConfigureAwait(false)
+                    : null;
 
-                _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
-                    request.FilmSlug, account.LetterboxdUsername);
+                // A review of a film this plugin already logged for the account goes on that diary
+                // entry. Posting it as a new entry would log a second watch, dated today.
+                var loggedOn = !request.IsRewatch && string.IsNullOrEmpty(request.Date)
+                    && !string.IsNullOrWhiteSpace(request.ReviewText) && request.TmdbId is > 0
+                    ? SyncHistory.GetLastSuccessfulSyncDate(jellyfinUsername, request.TmdbId.Value, account.LetterboxdUsername)
+                    : null;
+
+                // Today is the server's local day, the same day a sync would log a watch on.
+                var postDate = string.IsNullOrEmpty(request.Date)
+                    ? Helpers.ToLocalViewingDate(DateTime.UtcNow).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                    : request.Date;
+                var addedToEntry = false;
+                string? note = null;
+                if (loggedOn is { } entryDate)
+                {
+                    var entryDay = entryDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    var outcome = await service.AddReviewToDiaryEntryAsync(request.TmdbId!.Value, entryDate, request.ReviewText!,
+                        request.ContainsSpoilers, request.Rating).ConfigureAwait(false);
+                    if (outcome == ReviewAttachResult.AlreadyReviewed)
+                    {
+                        // Not a sync failure, so no Failed row: nothing was sent, and the film's diary sync is unaffected.
+                        lastError = $"Your Letterboxd diary entry for this film on {entryDay} already has a review, so it was left as it is. Edit that review on Letterboxd.";
+                        perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = false, error = lastError });
+                        continue;
+                    }
+
+                    addedToEntry = outcome == ReviewAttachResult.Attached;
+                    postDate = entryDay;
+                    if (outcome == ReviewAttachResult.Unsupported)
+                        note = $"The Letterboxd website login cannot add a review to an existing diary entry, so the review was posted as a new entry dated {entryDay}.";
+                    else if (outcome == ReviewAttachResult.NoEntry)
+                        note = $"Letterboxd has no diary entry for this film on {entryDay}, so the review was posted as a new entry on that date.";
+                }
+
+                if (!addedToEntry)
+                    await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, postDate, request.Rating, request.TmdbId)
+                        .ConfigureAwait(false);
+
+                _logger.LogInformation("Posted review for {FilmSlug} by {Username} ({Where})",
+                    request.FilmSlug, account.LetterboxdUsername, addedToEntry ? "on the existing diary entry" : "as a new diary entry");
 
                 var status = request.IsRewatch ? SyncStatus.Rewatch : SyncStatus.Success;
                 SyncHistory.Record(new SyncEvent
                 {
                     FilmTitle = request.FilmSlug.Replace("-", " "),
                     FilmSlug = request.FilmSlug,
+                    TmdbId = request.TmdbId is > 0 ? request.TmdbId.Value : 0,
                     Username = jellyfinUsername,
+                    Account = account.LetterboxdUsername,
                     Timestamp = DateTime.UtcNow,
+                    ViewingDate = DateTime.ParseExact(postDate, "yyyy-MM-dd", CultureInfo.InvariantCulture),
                     Status = status,
                     Source = "review"
                 });
 
-                perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = true });
+                perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = true, addedToEntry, note });
                 anySuccess = true;
             }
             catch (Exception ex) when (ratingOnly)
