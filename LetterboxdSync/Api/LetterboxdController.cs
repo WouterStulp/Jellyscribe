@@ -547,9 +547,23 @@ public class LetterboxdController : JellyfinUserApiController
     {
         if (string.IsNullOrWhiteSpace(request.FilmSlug))
             return BadRequest(new { error = "filmSlug is required" });
+        if (request.FilmSlug.Any(char.IsControl))
+            return BadRequest(new { error = "filmSlug is not a Letterboxd film slug" });
 
-        if (string.IsNullOrWhiteSpace(request.ReviewText) && !request.IsRewatch)
-            return BadRequest(new { error = "reviewText is required unless logging a rewatch" });
+        // A rating with no text and no rewatch is not a diary entry (Letterboxd refuses an empty
+        // review): it sets the member's film rating instead, the same call RatingSyncHandler makes.
+        var ratingOnly = string.IsNullOrWhiteSpace(request.ReviewText) && !request.IsRewatch && request.Rating.HasValue;
+        if (string.IsNullOrWhiteSpace(request.ReviewText) && !request.IsRewatch && !ratingOnly)
+            return BadRequest(new { error = "reviewText is required unless logging a rewatch or setting a rating" });
+
+        if (ratingOnly)
+        {
+            var r = request.Rating!.Value;
+            if (!double.IsFinite(r) || r < 0.5 || r > 5.0 || Math.Abs((r * 2) - Math.Round(r * 2)) > 1e-9)
+                return BadRequest(new { error = "A rating must be from 0.5 to 5 stars, in half stars" });
+            if (request.TmdbId is not > 0)
+                return BadRequest(new { error = "A rating on its own needs the film's TMDb id" });
+        }
 
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
@@ -576,7 +590,7 @@ public class LetterboxdController : JellyfinUserApiController
         var jellyfinUsername = GetJellyfinUsername() ?? userId;
         var perAccount = new List<object>();
         var anySuccess = false;
-        Exception? lastError = null;
+        string? lastError = null;
 
         foreach (var account in accounts)
         {
@@ -585,6 +599,14 @@ public class LetterboxdController : JellyfinUserApiController
                 using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
                     account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
                     .ConfigureAwait(false);
+
+                if (ratingOnly)
+                {
+                    await SetFilmRatingAsync(service, account, userId, jellyfinUsername, request).ConfigureAwait(false);
+                    perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = true });
+                    anySuccess = true;
+                    continue;
+                }
 
                 await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating, request.TmdbId)
                     .ConfigureAwait(false);
@@ -606,9 +628,19 @@ public class LetterboxdController : JellyfinUserApiController
                 perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = true });
                 anySuccess = true;
             }
+            catch (Exception ex) when (ratingOnly)
+            {
+                // Logged, not recorded as a Failed event, as RatingSyncHandler does: Failed rows feed
+                // the diary sync's per-film rules, and a rating that did not land must not touch them.
+                // The reply carries the one-line, length-capped form: the raw message can quote a response body.
+                lastError = AuthBreaker.Sanitize(ex.Message) ?? "Failed to set the rating";
+                _logger.LogError("Failed to set the rating on {FilmSlug} as {LbUser}: {Message}",
+                    request.FilmSlug, account.LetterboxdUsername, lastError);
+                perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = false, error = lastError });
+            }
             catch (Exception ex)
             {
-                lastError = ex;
+                lastError = AuthBreaker.Sanitize(ex.Message) ?? "Failed to post the review";
                 _logger.LogError("Failed to post review for {FilmSlug} as {LbUser}: {Message}",
                     request.FilmSlug, account.LetterboxdUsername, ex.Message);
 
@@ -623,7 +655,7 @@ public class LetterboxdController : JellyfinUserApiController
                     Source = "review"
                 });
 
-                perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = false, error = ex.Message });
+                perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = false, error = lastError });
             }
         }
 
@@ -634,9 +666,41 @@ public class LetterboxdController : JellyfinUserApiController
             WriteJellyfinRating(userId, request.TmdbId, request.Rating);
 
         if (!anySuccess && lastError != null)
-            return BadRequest(new { error = lastError.Message, accounts = perAccount });
+            return BadRequest(new { error = lastError, accounts = perAccount });
 
-        return Ok(new { success = true, accounts = perAccount });
+        return Ok(new { success = true, ratedOnly = ratingOnly, accounts = perAccount });
+    }
+
+    /// <summary>
+    /// A rating-only review: sets the member's Letterboxd film rating (not a diary entry) and
+    /// records it the way <see cref="RatingSyncHandler"/> does, as a Rated event and the value
+    /// last pushed, so the handler does not push the same rating again.
+    /// </summary>
+    private static async Task SetFilmRatingAsync(ILetterboxdService service, Account account, string userId, string jellyfinUsername, ReviewRequest request)
+    {
+        var tmdbId = request.TmdbId!.Value;
+        var stars = request.Rating!.Value;
+        // The film id must come from this same service instance: the API and the website use different ids.
+        var film = await service.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
+        await service.SetFilmRatingAsync(film.Slug, film.FilmId, stars).ConfigureAwait(false);
+
+        RatingPushStore.RecordPushed(userId, account.LetterboxdUsername, tmdbId, stars);
+        // One plain line: control characters become spaces, and no " · ", which the dashboards read as the title's end.
+        var title = string.Join(' ', new string((request.Title ?? string.Empty).Select(c => char.IsControl(c) ? ' ' : c).ToArray())
+            .Replace('·', '-').Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        if (title.Length == 0) title = request.FilmSlug.Replace("-", " ");
+        if (title.Length > 200) title = title[..200];
+        SyncHistory.Record(new SyncEvent
+        {
+            FilmTitle = $"{title} · Rated {stars.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} stars",
+            FilmSlug = film.Slug,
+            TmdbId = tmdbId,
+            Username = jellyfinUsername,
+            Account = account.LetterboxdUsername,
+            Timestamp = DateTime.UtcNow,
+            Status = SyncStatus.Rated,
+            Source = SyncEventSources.Rating
+        });
     }
 
     /// <summary>
@@ -987,6 +1051,9 @@ public class ReviewRequest
     public string? Date { get; set; }
     public double? Rating { get; set; }
     public int? TmdbId { get; set; }
+
+    /// <summary>Optional film title, used to label a rating-only review in the activity list.</summary>
+    public string? Title { get; set; }
 
     /// <summary>
     /// Optional. When set, the review is posted only to that Letterboxd account.
