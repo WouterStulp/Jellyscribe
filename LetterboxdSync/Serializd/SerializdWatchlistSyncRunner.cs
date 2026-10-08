@@ -53,7 +53,32 @@ public class SerializdWatchlistSyncRunner
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
 
+    /// <summary>How long a scheduled run waits for a manual run to finish. Tests shorten it.</summary>
+    internal static TimeSpan ScheduledGateWait { get; set; } = TimeSpan.FromMinutes(15);
+
     public async Task RunForAllAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        // A user's "Sync watchlist now" may hold the gate; it covers only that user, so the
+        // scheduled run waits for it (bounded) instead of skipping everyone else until the
+        // next trigger.
+        if (!await SerializdWatchlistSyncGate.Instance.WaitAsync(ScheduledGateWait, cancellationToken).ConfigureAwait(false))
+        {
+            _logger.LogWarning("Serializd watchlist sync still running after {Minutes} minutes, skipping scheduled run",
+                ScheduledGateWait.TotalMinutes);
+            return;
+        }
+
+        try
+        {
+            await RunForAllCoreAsync(progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            SerializdWatchlistSyncGate.Instance.Release();
+        }
+    }
+
+    private async Task RunForAllCoreAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         var pairs = _userManager.GetUsers()
             .SelectMany(u => Config.GetEnabledSerializdAccountsForUser(u.Id.ToString("N"))
@@ -69,7 +94,7 @@ public class SerializdWatchlistSyncRunner
             foreach (var (user, account) in pairs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                SyncProgress.SetPhase(SyncProgress.TrackSerializd, $"Syncing {user.Username}'s watchlist");
+                SyncProgress.SetPhase(SyncProgress.TrackSerializd, "Syncing watchlist");
                 try
                 {
                     await SyncOneAsync(user, account, cancellationToken).ConfigureAwait(false);
@@ -96,7 +121,29 @@ public class SerializdWatchlistSyncRunner
         }
     }
 
+    /// <summary>
+    /// Runs the watchlist sync for one Jellyfin user. Returns false when another watchlist run
+    /// holds the gate, the user is unknown, or none of their accounts has watchlist sync on.
+    /// </summary>
     public async Task<bool> TryRunForUserAsync(string userJellyfinId, CancellationToken cancellationToken)
+    {
+        if (!await SerializdWatchlistSyncGate.Instance.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            _logger.LogWarning("Serializd watchlist sync already running, refusing user-triggered start for {UserId}", userJellyfinId);
+            return false;
+        }
+
+        try
+        {
+            return await TryRunForUserCoreAsync(userJellyfinId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            SerializdWatchlistSyncGate.Instance.Release();
+        }
+    }
+
+    private async Task<bool> TryRunForUserCoreAsync(string userJellyfinId, CancellationToken cancellationToken)
     {
         var user = _userManager.GetUsers().FirstOrDefault(u => u.Id.ToString("N") == userJellyfinId);
         if (user == null) return false;
@@ -104,7 +151,7 @@ public class SerializdWatchlistSyncRunner
         var accounts = Config.GetEnabledSerializdAccountsForUser(userJellyfinId).Where(a => a.SyncWatchlist).ToList();
         if (accounts.Count == 0) return false;
 
-        SyncProgress.Start(SyncProgress.TrackSerializd, "Serializd watchlist sync", $"Syncing {user.Username}'s watchlist");
+        SyncProgress.Start(SyncProgress.TrackSerializd, "Serializd watchlist sync", "Syncing watchlist");
         SyncProgress.SetTotal(SyncProgress.TrackSerializd, accounts.Count);
         try
         {

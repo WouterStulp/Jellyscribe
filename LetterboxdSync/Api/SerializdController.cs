@@ -172,9 +172,15 @@ public class SerializdController : JellyfinUserApiController
     /// <summary>Serializd activity stats for the dashboard, same shape as the Letterboxd <c>/Stats</c>.</summary>
     [HttpGet("Stats")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult GetStats()
     {
-        var (total, success, failed, skipped, rewatches) = SerializdActivity.GetStats(GetJellyfinUsername());
+        // SerializdActivity treats a null username as "everyone", so an unresolved caller must stop here.
+        var jellyfinUsername = GetJellyfinUsername();
+        if (string.IsNullOrEmpty(jellyfinUsername))
+            return BadRequest(new { error = "Could not determine user" });
+
+        var (total, success, failed, skipped, rewatches) = SerializdActivity.GetStats(jellyfinUsername);
         var watchlist = WatchlistStats.GetTv(GetCurrentUserId() ?? string.Empty);
         return Ok(new { total, success, failed, skipped, rewatches, watchlist });
     }
@@ -182,10 +188,15 @@ public class SerializdController : JellyfinUserApiController
     /// <summary>Paged Serializd activity for the dashboard, same shape as the Letterboxd <c>/History</c>.</summary>
     [HttpGet("History")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult GetHistory([FromQuery] int count = 50, [FromQuery] int offset = 0)
     {
+        var jellyfinUsername = GetJellyfinUsername();
+        if (string.IsNullOrEmpty(jellyfinUsername))
+            return BadRequest(new { error = "Could not determine user" });
+
         var capped = Math.Clamp(count, 1, 500);
-        var (events, total) = SerializdActivity.GetPage(Math.Max(offset, 0), capped, GetJellyfinUsername());
+        var (events, total) = SerializdActivity.GetPage(Math.Max(offset, 0), capped, jellyfinUsername);
         return Ok(new { events, total });
     }
 
@@ -281,15 +292,24 @@ public class SerializdController : JellyfinUserApiController
 
     /// <summary>
     /// Verifies a Serializd email/password by logging in. Returns the account username on
-    /// success (200) or a 400 with an error message on failure. Persists nothing.
+    /// success (200) or a 400 with an error message on failure. Persists nothing. Failed checks
+    /// are rate-limited per user and server-wide (<see cref="LoginCheckLimiter"/>), answering 429.
     /// </summary>
     [HttpPost("Verify")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult> Verify([FromBody] VerifyRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.Email) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest(new { error = "Email and password are required." });
+
+        var limiterKey = GetCurrentUserId() ?? string.Empty;
+        if (!LoginCheckLimiter.Serializd.TryAcquire(limiterKey, out var stamp, out var retryAfter))
+        {
+            _logger.LogWarning("Serializd login check refused for {UserId}: rate limit reached", limiterKey);
+            return TooManyLoginChecks(retryAfter);
+        }
 
         try
         {
@@ -304,6 +324,7 @@ public class SerializdController : JellyfinUserApiController
                 username = await client.VerifyLoginAsync(request.Email, request.Password).ConfigureAwait(false);
             }
 
+            LoginCheckLimiter.Serializd.Refund(limiterKey, stamp);
             return Ok(new { ok = true, username });
         }
         catch (Exception ex)
@@ -355,16 +376,22 @@ public class SerializdController : JellyfinUserApiController
     /// <summary>
     /// Mirrors the calling user's Serializd watchlist into the Jellyfin collection + playlist,
     /// on demand (the TV counterpart to the Letterboxd "Sync Watchlist Now"). 202 + background;
-    /// 400 if no Serializd account has watchlist sync enabled.
+    /// 400 if no Serializd account has watchlist sync enabled; 409 while a watchlist run is going.
     /// </summary>
     [HttpPost("SyncWatchlistNow")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public ActionResult SyncWatchlistNow()
     {
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
             return BadRequest(new { error = "Could not determine user" });
+
+        // Best-effort early answer for the dashboard; the runner's own gate is what actually
+        // stops two requests that both get past this check from running in parallel.
+        if (SerializdWatchlistSyncGate.IsRunning)
+            return Conflict(new { error = "A Serializd watchlist sync is already running" });
 
         var enabled = Plugin.Instance!.Configuration.GetEnabledSerializdAccountsForUser(userId);
         if (!enabled.Any(a => a.SyncWatchlist))

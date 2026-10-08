@@ -60,6 +60,7 @@ public class SerializdControllerTests : IDisposable
             Substitute.For<IUserManager>(), Substitute.For<ICollectionManager>(), Substitute.For<IPlaylistManager>());
 
         _controller = new SerializdController(new NullLogger<SerializdController>(), runner, watchlistRunner, _userManager);
+        LoginCheckLimiter.Serializd.ResetForTesting();
     }
 
     public void Dispose()
@@ -119,6 +120,7 @@ public class SerializdControllerTests : IDisposable
     [Fact]
     public async Task Verify_GoodLogin_ReturnsOkWithUsername()
     {
+        Authenticate("aabbccddeeff00112233445566778899");
         SerializdController.VerifyOverrideForTesting = (_, _, _) => Task.FromResult<string?>("8bitproxy");
 
         var result = await _controller.Verify(
@@ -129,8 +131,34 @@ public class SerializdControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Verify_RepeatedFailures_AreRefusedWith429()
+    {
+        var (_, idHex) = AddUserWithAccount();
+        Authenticate(idHex);
+        var attempts = 0;
+        SerializdController.VerifyOverrideForTesting = (_, _, _) =>
+        {
+            attempts++;
+            throw new Exception("Serializd login failed (401): Incorrect password.");
+        };
+
+        for (var i = 0; i < LoginCheckLimiter.PerUserLimit; i++)
+            Assert.IsType<BadRequestObjectResult>(await _controller.Verify(
+                new SerializdController.VerifyRequest { Email = "me@example.com", Password = "wrong" + i }));
+
+        var refused = await _controller.Verify(
+            new SerializdController.VerifyRequest { Email = "me@example.com", Password = "wrong-again" });
+
+        var obj = Assert.IsAssignableFrom<ObjectResult>(refused);
+        Assert.Equal(StatusCodes.Status429TooManyRequests, obj.StatusCode);
+        Assert.StartsWith("Too many login checks", Prop<string>(refused, "error"));
+        Assert.Equal(LoginCheckLimiter.PerUserLimit, attempts);
+    }
+
+    [Fact]
     public async Task Verify_BadLogin_ReturnsBadRequest()
     {
+        Authenticate("aabbccddeeff00112233445566778899");
         SerializdController.VerifyOverrideForTesting = (_, _, _) =>
             throw new Exception("Serializd login failed (401): Incorrect password.");
 
@@ -493,6 +521,37 @@ public class SerializdControllerTests : IDisposable
     // ----- GetStats / GetHistory -----
 
     [Fact]
+    public void GetStats_UnresolvedUser_ReturnsBadRequest()
+    {
+        AddUserWithAccount();
+        Authenticate("ffffffffffffffffffffffffffffffff");
+
+        var result = _controller.GetStats();
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void GetHistory_UnresolvedUser_ReturnsBadRequest()
+    {
+        var (user, _) = AddUserWithAccount();
+        SerializdActivity.Record(new SyncEvent
+        {
+            FilmTitle = "Silo · S1E1",
+            TmdbId = 1,
+            Username = user.Username!,
+            Timestamp = DateTime.UtcNow,
+            Status = SyncStatus.Success,
+            Source = "playback",
+        });
+        _controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
+
+        var result = _controller.GetHistory();
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
     public void GetStats_ReturnsAggregateShape()
     {
         var (user, idHex) = AddUserWithAccount();
@@ -607,6 +666,26 @@ public class SerializdControllerTests : IDisposable
         var result = _controller.SyncWatchlistNow();
 
         Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void SyncWatchlistNow_WatchlistRunInProgress_ReturnsConflict()
+    {
+        var (_, idHex) = AddUserWithAccount();
+        Plugin.Instance!.Configuration.SerializdAccounts.Single(a => a.UserJellyfinId == idHex).SyncWatchlist = true;
+        Authenticate(idHex);
+        SerializdWatchlistSyncGate.Instance.Wait();
+        try
+        {
+            var result = _controller.SyncWatchlistNow();
+
+            Assert.IsType<ConflictObjectResult>(result);
+            Assert.Null(_controller.LastBackgroundSync);
+        }
+        finally
+        {
+            SerializdWatchlistSyncGate.Instance.Release();
+        }
     }
 
     [Fact]
