@@ -151,7 +151,7 @@ If you've ruled all three out and a single film keeps getting stuck on the TMDb 
 
 ## Privacy
 
-This fork sends nothing anywhere except to the services you link: Letterboxd, Serializd and your own Seerr. The upstream plugin's usage telemetry, "Send logs to developer" upload, and install-counting repository mirror are removed.
+This fork sends nothing anywhere except to the services you link: Letterboxd, Serializd, your own Seerr, and the ntfy topic if you set one up for notifications. The upstream plugin's usage telemetry, "Send logs to developer" upload, and install-counting repository mirror are removed.
 
 ## Requirements
 
