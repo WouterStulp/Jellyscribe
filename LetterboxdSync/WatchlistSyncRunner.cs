@@ -185,7 +185,7 @@ public class WatchlistSyncRunner
         SyncProgress.SetPhase(SyncProgress.TrackLetterboxd, "Authenticating");
 
         var breakerUserId = user.Id.ToString("N");
-        if (AuthBreaker.IsOpen(breakerUserId, account.LetterboxdUsername))
+        if (AuthBreaker.BlocksLogin(breakerUserId, account.LetterboxdUsername))
         {
             _logger.LogInformation(
                 "Skipping watchlist sync for {Username}: auth breaker open; re-save credentials to resume",
@@ -238,14 +238,20 @@ public class WatchlistSyncRunner
             Recursive = true
         });
 
+        // One pass over the library instead of a scan per watchlist film. TryAdd keeps the
+        // first movie per id, which is what the per-film FirstOrDefault used to pick.
+        var moviesByTmdbId = new Dictionary<string, BaseItem>(StringComparer.Ordinal);
+        foreach (var movie in allMovies)
+        {
+            if (movie.GetProviderId(MetadataProvider.Tmdb) is { } id)
+                moviesByTmdbId.TryAdd(id, movie);
+        }
+
         var watchlistItemIds = new HashSet<Guid>();
         var matchedTmdbIds = new HashSet<int>();
         foreach (var tmdbId in tmdbIds)
         {
-            var match = allMovies.FirstOrDefault(m =>
-                m.GetProviderId(MetadataProvider.Tmdb) == tmdbId.ToString());
-
-            if (match != null)
+            if (moviesByTmdbId.TryGetValue(tmdbId.ToString(), out var match))
             {
                 watchlistItemIds.Add(match.Id);
                 matchedTmdbIds.Add(tmdbId);

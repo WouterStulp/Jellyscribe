@@ -26,12 +26,56 @@ public class LetterboxdApiClient : ILetterboxdService
     // username must never get, or refresh, another account's token.
     private static readonly ConcurrentDictionary<string, TokenInfo> TokenCache = new();
 
+    // tmdbId -> film, shared across instances so later runs and other accounts skip the
+    // request. Never shared with the scraper: FilmId here is the LID.
+    // Kept for the process lifetime: it grows with the library at most, and a film Letterboxd
+    // renames keeps its old slug until a restart.
+    private static readonly ConcurrentDictionary<int, FilmResult> FilmCache = new();
+
+    /// <summary>
+    /// Test hook: forget cached lookups. With no ids it clears the whole cache; test classes that
+    /// run in parallel with others pass the ids they use, so they never clear a cache another
+    /// class is relying on.
+    /// </summary>
+    internal static void ResetFilmCacheForTesting(params int[] tmdbIds)
+    {
+        if (tmdbIds.Length == 0)
+        {
+            FilmCache.Clear();
+            return;
+        }
+
+        foreach (var id in tmdbIds)
+            FilmCache.TryRemove(id, out _);
+    }
+
+    // One process-wide client: a client per instance (one per sync, per account and per
+    // dashboard request) opened a fresh connection pool and TLS handshake every time. The
+    // default headers are the same for every account; the bearer token goes on each request.
+    // The bounded connection lifetime keeps DNS changes visible.
+    private static readonly HttpClient SharedHttp = WithDefaultHeaders(new HttpClient(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        // Shared by every account: a cookie one response set must never ride on another's request.
+        UseCookies = false,
+    }));
+
+    private readonly bool _ownsHttp;
+
     public LetterboxdApiClient(ILogger logger, HttpMessageHandler? handler = null)
     {
         _logger = logger;
-        _http = handler != null ? new HttpClient(handler) : new HttpClient();
-        _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("LetterboxdSync/1.6");
+        _ownsHttp = handler != null;
+        _http = handler != null ? WithDefaultHeaders(new HttpClient(handler)) : SharedHttp;
+    }
+
+    internal HttpClient HttpForTesting => _http;
+
+    private static HttpClient WithDefaultHeaders(HttpClient http)
+    {
+        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("LetterboxdSync/1.6");
+        return http;
     }
 
     public async Task AuthenticateAsync(string username, string password, string? rawCookies = null)
@@ -70,7 +114,7 @@ public class LetterboxdApiClient : ILetterboxdService
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Letterboxd API auth failed ({response.StatusCode}): {errorBody}");
+            throw new LetterboxdApiAuthException(response.StatusCode, $"Letterboxd API auth failed ({response.StatusCode}): {errorBody}");
         }
 
         var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -84,6 +128,9 @@ public class LetterboxdApiClient : ILetterboxdService
 
     public async Task<FilmResult> LookupFilmByTmdbIdAsync(int tmdbId)
     {
+        if (FilmCache.TryGetValue(tmdbId, out var cached))
+            return cached;
+
         var response = await SendSignedAsync(HttpMethod.Get, "/films", queryParams: $"filmId=tmdb%3A{tmdbId}&perPage=1")
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -99,7 +146,9 @@ public class LetterboxdApiClient : ILetterboxdService
         var lid = film.GetProperty("id").GetString()!;
         var slug = ExtractSlugFromLink(film);
 
-        return new FilmResult(slug, lid, null);
+        var result = new FilmResult(slug, lid, null);
+        FilmCache[tmdbId] = result;
+        return result;
     }
 
     public async Task<DiaryInfo> GetDiaryInfoAsync(string filmIdOrSlug, string username)
@@ -460,7 +509,8 @@ public class LetterboxdApiClient : ILetterboxdService
 
     public void Dispose()
     {
-        _http.Dispose();
+        if (_ownsHttp)
+            _http.Dispose();
     }
 
     // --- Test-only helpers (InternalsVisibleTo LetterboxdSync.Tests) ---

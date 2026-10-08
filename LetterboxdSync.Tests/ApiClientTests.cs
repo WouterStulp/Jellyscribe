@@ -127,7 +127,7 @@ public class ApiClientAuthTests
         });
 
         using var client = new LetterboxdApiClient(TestLogger, handler);
-        var ex = await Assert.ThrowsAsync<Exception>(() => client.AuthenticateAsync("bad", "creds"));
+        var ex = await Assert.ThrowsAsync<LetterboxdApiAuthException>(() => client.AuthenticateAsync("bad", "creds"));
         Assert.Contains("invalid_grant", ex.Message);
     }
 
@@ -235,7 +235,7 @@ public class ApiClientTokenCacheIsolationTests
         await owner.AuthenticateAsync(username, "right");
 
         using var attacker = new LetterboxdApiClient(TestLogger, handler);
-        await Assert.ThrowsAsync<Exception>(() => attacker.AuthenticateAsync(username, "wrong"));
+        await Assert.ThrowsAsync<LetterboxdApiAuthException>(() => attacker.AuthenticateAsync(username, "wrong"));
 
         Assert.Equal(2, grants.Count);
         Assert.Contains("password=wrong", grants[1]);
@@ -268,7 +268,7 @@ public class ApiClientTokenCacheIsolationTests
         await owner.AuthenticateAsync(username, "right");
 
         using var attacker = new LetterboxdApiClient(TestLogger, handler);
-        await Assert.ThrowsAsync<Exception>(() => attacker.AuthenticateAsync(username, "wrong"));
+        await Assert.ThrowsAsync<LetterboxdApiAuthException>(() => attacker.AuthenticateAsync(username, "wrong"));
         Assert.DoesNotContain(grants, g => g.Contains("grant_type=refresh_token"));
 
         // The owner's own stale token still goes through the refresh path.
@@ -281,6 +281,8 @@ public class ApiClientTokenCacheIsolationTests
 public class ApiClientFilmLookupTests
 {
     private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
+
+    public ApiClientFilmLookupTests() => LetterboxdApiClient.ResetFilmCacheForTesting(550, 99999999);
 
     [Fact]
     public async Task LookupFilmByTmdbIdAsync_ReturnsFilmResult()
@@ -506,6 +508,8 @@ public class ApiClientRateLimitTests
 {
     private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
 
+    public ApiClientRateLimitTests() => LetterboxdApiClient.ResetFilmCacheForTesting(123);
+
     [Fact]
     public async Task SendSigned_429_RetriesAfterDelay()
     {
@@ -541,6 +545,45 @@ public class ApiClientRateLimitTests
 
         Assert.Equal(2, callCount);
         Assert.Equal("abc", result.FilmId);
+    }
+}
+
+public class ApiClientSharedHttpTests
+{
+    private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
+
+    [Fact]
+    public async Task InjectedHandler_IsUsed_AndBearerTokenIsSentPerRequest()
+    {
+        var seen = new List<HttpRequestMessage>();
+        var inner = ApiTestHelpers.CreateAuthenticatedHandler();
+        var handler = new ApiMockHandler(req =>
+        {
+            seen.Add(req);
+            return inner.Invoke(req);
+        });
+
+        using var client = new LetterboxdApiClient(TestLogger, handler);
+        await client.AuthenticateAsync("shared-http-user", "pass");
+
+        var me = Assert.Single(seen, r => r.RequestUri!.AbsolutePath.EndsWith("/me"));
+        Assert.Equal("Bearer", me.Headers.Authorization?.Scheme);
+        Assert.Equal("mock-token", me.Headers.Authorization?.Parameter);
+        Assert.Null(client.HttpForTesting.DefaultRequestHeaders.Authorization);
+        Assert.All(seen, r => Assert.Contains(r.Headers.Accept, a => a.MediaType == "application/json"));
+    }
+
+    [Fact]
+    public void ProductionClients_ShareOneHttpClient_AndDisposeLeavesItUsable()
+    {
+        var first = new LetterboxdApiClient(TestLogger);
+        var shared = first.HttpForTesting;
+        first.Dispose();
+
+        using var second = new LetterboxdApiClient(TestLogger);
+
+        Assert.Same(shared, second.HttpForTesting);
+        shared.CancelPendingRequests();
     }
 }
 
@@ -589,6 +632,8 @@ internal class ApiMockHandler : HttpMessageHandler
     {
         _handler = handler;
     }
+
+    public HttpResponseMessage Invoke(HttpRequestMessage request) => _handler(request);
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

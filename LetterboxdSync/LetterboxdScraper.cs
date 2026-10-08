@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -23,6 +24,29 @@ public class LetterboxdScraper
     private static readonly Regex TitleRegex =
         new(@"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
+    // tmdbId -> film, shared across instances so later runs and other accounts skip the two
+    // throttled requests. Never shared with LetterboxdApiClient: FilmId here is the numeric id.
+    // Kept for the process lifetime: it grows with the library at most, and a film Letterboxd
+    // renames keeps its old slug until a restart.
+    private static readonly ConcurrentDictionary<int, FilmResult> FilmCache = new();
+
+    /// <summary>
+    /// Test hook: forget cached lookups. With no ids it clears the whole cache; test classes that
+    /// run in parallel with others pass the ids they use, so they never clear a cache another
+    /// class is relying on.
+    /// </summary>
+    internal static void ResetFilmCacheForTesting(params int[] tmdbIds)
+    {
+        if (tmdbIds.Length == 0)
+        {
+            FilmCache.Clear();
+            return;
+        }
+
+        foreach (var id in tmdbIds)
+            FilmCache.TryRemove(id, out _);
+    }
+
     public LetterboxdScraper(LetterboxdHttpClient http, ILogger logger)
     {
         _http = http;
@@ -31,12 +55,15 @@ public class LetterboxdScraper
 
     public async Task<FilmResult> LookupFilmByTmdbIdAsync(int tmdbId)
     {
+        if (FilmCache.TryGetValue(tmdbId, out var cached))
+            return cached;
+
         await Task.Delay(3000 + Random.Shared.Next(2000)).ConfigureAwait(false);
 
         using var res = await _http.GetWithCloudflareRetryAsync($"/tmdb/{tmdbId}").ConfigureAwait(false);
 
         if (res.StatusCode == HttpStatusCode.Forbidden)
-            throw new Exception(
+            throw new LetterboxdBlockedException(
                 $"TMDb lookup returned 403 for /tmdb/{tmdbId} after retries. Cloudflare is blocking. " +
                 "If Raw Cookies and a matching User-Agent are already set, cf_clearance is most likely " +
                 "(1) expired (the token is short-lived, often around 30 minutes), " +
@@ -63,7 +90,9 @@ public class LetterboxdScraper
 
         _logger.LogInformation("Resolved TMDb:{TmdbId} -> slug={Slug}, filmId={FilmId}, productionId={ProductionId}",
             tmdbId, filmSlug, filmId, productionId ?? "null");
-        return new FilmResult(filmSlug, filmId, productionId);
+        var result = new FilmResult(filmSlug, filmId, productionId);
+        FilmCache[tmdbId] = result;
+        return result;
     }
 
     public async Task<DiaryInfo> GetDiaryInfoAsync(string filmSlug, string username)
@@ -82,12 +111,13 @@ public class LetterboxdScraper
 
         if (!res.IsSuccessStatusCode)
             throw new DiaryCheckFailedException(
-                $"Could not check the Letterboxd diary for {filmSlug}: returned {(int)res.StatusCode}");
+                $"Could not check the Letterboxd diary for {filmSlug}: returned {(int)res.StatusCode}",
+                blocked: res.StatusCode == HttpStatusCode.Forbidden);
 
         var html = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
         if (IsCloudflareChallenge(html))
             throw new DiaryCheckFailedException(
-                $"Could not check the Letterboxd diary for {filmSlug}: Cloudflare challenge");
+                $"Could not check the Letterboxd diary for {filmSlug}: Cloudflare challenge", blocked: true);
 
         var dates = Helpers.ParseDiaryDates(html);
 

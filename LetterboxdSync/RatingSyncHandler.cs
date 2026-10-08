@@ -54,6 +54,14 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
     private readonly ConcurrentDictionary<(Guid User, Guid Item), double> _known = new();
     private volatile bool _baselineReady;
 
+    // Users the seed skipped because none of their accounts syncs ratings. Their saves only
+    // update the baseline, until a later seed pass picks them up.
+    private readonly ConcurrentDictionary<Guid, byte> _unseededUsers = new();
+
+    // Set when the plugin configuration is saved, so the sweep loop seeds anyone who has just
+    // turned rating sync on.
+    private volatile bool _reseedRequested;
+
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
@@ -93,14 +101,21 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _userDataManager.UserDataSaved += OnUserDataSaved;
+        if (Plugin.Instance != null)
+            Plugin.Instance.ConfigurationChanged += OnConfigurationChanged;
         _cts = new CancellationTokenSource();
         _loop = Task.Run(() => RunAsync(_cts.Token), CancellationToken.None);
         return Task.CompletedTask;
     }
 
+    private void OnConfigurationChanged(object? sender, MediaBrowser.Model.Plugins.BasePluginConfiguration e)
+        => _reseedRequested = true;
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _userDataManager.UserDataSaved -= OnUserDataSaved;
+        if (Plugin.Instance != null)
+            Plugin.Instance.ConfigurationChanged -= OnConfigurationChanged;
         if (_cts == null || _loop == null)
             return;
 
@@ -147,9 +162,34 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
     /// </summary>
     internal void SeedBaseline(CancellationToken ct)
     {
+        var seeded = SeedUsers(_userManager.GetUsers(), ct);
+        _logger.LogInformation("Rating sync ready: {Count} existing film ratings recorded as the starting point", seeded);
+    }
+
+    /// <summary>Seeds the users the first pass skipped who have turned rating sync on since.</summary>
+    internal void SeedNewlyEnabledUsers(CancellationToken ct)
+    {
+        var users = _userManager.GetUsers().Where(u => _unseededUsers.ContainsKey(u.Id)).ToList();
+        var before = _unseededUsers.Count;
+        var seeded = SeedUsers(users, ct);
+        if (_unseededUsers.Count < before)
+            _logger.LogInformation("Rating sync turned on for {Users} more user(s): {Count} existing film ratings recorded as their starting point",
+                before - _unseededUsers.Count, seeded);
+    }
+
+    private int SeedUsers(IEnumerable<Jellyfin.Database.Implementations.Entities.User> users, CancellationToken ct)
+    {
         var seeded = 0;
-        foreach (var user in _userManager.GetUsers())
+        foreach (var user in users)
         {
+            // Reading every movie's user data is the expensive part, and a user with rating sync
+            // off on every account never pushes anything, so skip them until they turn it on.
+            if (!Config.GetEnabledAccountsForUser(user.Id.ToString("N")).Any(a => a.SyncRatings))
+            {
+                _unseededUsers[user.Id] = 0;
+                continue;
+            }
+
             var movies = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = new[] { BaseItemKind.Movie },
@@ -164,9 +204,11 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
                 if (rating is > 0 && _known.TryAdd((user.Id, movie.Id), rating.Value))
                     seeded++;
             }
+
+            _unseededUsers.TryRemove(user.Id, out _);
         }
 
-        _logger.LogInformation("Rating sync ready: {Count} existing film ratings recorded as the starting point", seeded);
+        return seeded;
     }
 
     internal void MarkBaselineReady() => _baselineReady = true;
@@ -216,6 +258,18 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
                 _pending.TryRemove(key, out _);
             return;
         }
+        // A user the seed skipped (rating sync was off) has no baseline: this save cannot tell a
+        // change from an old rating, so it becomes the baseline and nothing is pushed. Turning
+        // rating sync on triggers a seed within a second or so (see OnConfigurationChanged).
+        if (_unseededUsers.ContainsKey(e.UserId))
+        {
+            if (current is double absorbed)
+                _known[key] = absorbed;
+            else
+                _known.TryRemove(key, out _);
+            return;
+        }
+
         var known = _known.TryGetValue(key, out var stored);
         double? previous = known ? stored : null;
 
@@ -265,6 +319,13 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
             {
                 try
                 {
+                    if (_reseedRequested)
+                    {
+                        _reseedRequested = false;
+                        if (!_unseededUsers.IsEmpty)
+                            SeedNewlyEnabledUsers(ct);
+                    }
+
                     await DrainDueAsync(ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -366,7 +427,7 @@ public sealed class RatingSyncHandler : IHostedService, IDisposable
             if (LibraryExclusion.IsExcluded(_libraryManager, item, account.ExcludedLibraryIds, _logger))
                 continue;
 
-            if (AuthBreaker.IsOpen(userIdN, account.LetterboxdUsername))
+            if (AuthBreaker.BlocksLogin(userIdN, account.LetterboxdUsername))
             {
                 _logger.LogInformation(
                     "Not syncing the rating on {Title} for {LbUser}: auth breaker open; it syncs on the next rating change after credentials are re-saved",

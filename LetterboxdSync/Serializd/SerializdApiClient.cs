@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -26,6 +27,7 @@ namespace LetterboxdSync.Serializd;
 public class SerializdApiClient : ISerializdService
 {
     private readonly HttpClient _http;
+    private readonly bool _ownsHttp;
     private readonly ILogger _logger;
     private string _email = string.Empty;
     private string _password = string.Empty;
@@ -59,15 +61,37 @@ public class SerializdApiClient : ISerializdService
     private const int MaxSendAttempts = 4; // initial try + 3 backoff retries
     private static readonly SemaphoreSlim RequestGate = new(MaxConcurrentRequests, MaxConcurrentRequests);
 
+    // One process-wide client: a client per sync opened a fresh connection pool (and TLS
+    // handshake) every time. The bounded connection lifetime keeps DNS changes on Render
+    // visible. Only default headers live here; the bearer token goes on each request.
+    private static readonly HttpClient SharedHttp = WithDefaultHeaders(new HttpClient(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        // Shared by every account: a cookie one response set must never ride on another's request.
+        UseCookies = false,
+    }));
+
+    // Serializd's Render host cold-starts after idling, and a request that hangs on it is
+    // abandoned after this rather than HttpClient's default 100s, then retried with backoff.
+    internal static TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(60);
+
     public SerializdApiClient(ILogger logger, HttpMessageHandler? handler = null)
     {
         _logger = logger;
-        _http = handler != null ? new HttpClient(handler) : new HttpClient();
-        _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd(SerializdApiConstants.UserAgent);
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("Origin", SerializdApiConstants.FrontPageUrl);
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", SerializdApiConstants.FrontPageUrl);
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("X-Requested-With", SerializdApiConstants.AppId);
+        _ownsHttp = handler != null;
+        _http = handler != null ? WithDefaultHeaders(new HttpClient(handler)) : SharedHttp;
+    }
+
+    internal HttpClient HttpForTesting => _http;
+
+    private static HttpClient WithDefaultHeaders(HttpClient http)
+    {
+        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(SerializdApiConstants.UserAgent);
+        http.DefaultRequestHeaders.TryAddWithoutValidation("Origin", SerializdApiConstants.FrontPageUrl);
+        http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", SerializdApiConstants.FrontPageUrl);
+        http.DefaultRequestHeaders.TryAddWithoutValidation("X-Requested-With", SerializdApiConstants.AppId);
+        return http;
     }
 
     /// <summary>Test hook: drop cached tokens + season maps so tests don't leak state into each other.</summary>
@@ -126,7 +150,7 @@ public class SerializdApiClient : ISerializdService
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd login failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(err, 200)}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd login failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(err, 200)}");
         }
 
         var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -170,7 +194,7 @@ public class SerializdApiClient : ISerializdService
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd get-show {showTmdbId} failed ({(int)resp.StatusCode}): {err}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd get-show {showTmdbId} failed ({(int)resp.StatusCode}): {err}");
         }
 
         var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -229,7 +253,7 @@ public class SerializdApiClient : ISerializdService
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd /show/reviews/add failed ({(int)resp.StatusCode}): {err}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd /show/reviews/add failed ({(int)resp.StatusCode}): {err}");
         }
     }
 
@@ -247,7 +271,7 @@ public class SerializdApiClient : ISerializdService
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd {path} failed ({(int)resp.StatusCode}): {err}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd {path} failed ({(int)resp.StatusCode}): {err}");
         }
     }
 
@@ -332,7 +356,15 @@ public class SerializdApiClient : ISerializdService
     {
         if (serializdSeasonIds.Count == 0) return Array.Empty<int>();
 
-        var numberToId = await FetchSeasonMapAsync(showTmdbId).ConfigureAwait(false);
+        // Same cache as ResolveSeasonIdAsync; an id the cached map doesn't know (a season added
+        // since) forces one refetch.
+        if (!SeasonCache.TryGetValue(showTmdbId, out var numberToId)
+            || serializdSeasonIds.Any(sid => !numberToId.Values.Contains(sid)))
+        {
+            numberToId = await FetchSeasonMapAsync(showTmdbId).ConfigureAwait(false);
+            SeasonCache[showTmdbId] = numberToId;
+        }
+
         var idToNumber = new Dictionary<int, int>();
         foreach (var kv in numberToId) idToNumber[kv.Value] = kv.Key;
 
@@ -447,7 +479,7 @@ public class SerializdApiClient : ISerializdService
             "Serializd review POST show {Show} (is_log={IsLog}, rating={Rating}, textLen={Len}) → HTTP {Status}",
             showTmdbId, hasText, payload["rating"], (reviewText ?? string.Empty).Length, (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Serializd review ({showTmdbId}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd review ({showTmdbId}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
     }
 
     public async Task CreateEpisodeReviewAsync(int showTmdbId, int seasonNumber, int episodeNumber, int? rating, string? reviewText, bool containsSpoiler)
@@ -484,7 +516,7 @@ public class SerializdApiClient : ISerializdService
             "Serializd episode review POST show {Show} S{Season}E{Episode} (is_log={IsLog}, rating={Rating}, textLen={Len}) → HTTP {Status}",
             showTmdbId, seasonNumber, episodeNumber, hasText, payload["rating"], (reviewText ?? string.Empty).Length, (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Serializd episode review ({showTmdbId} S{seasonNumber}E{episodeNumber}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd episode review ({showTmdbId} S{seasonNumber}E{episodeNumber}) failed ({(int)resp.StatusCode}): {LetterboxdHttpClient.Truncate(respBody, 200)}");
     }
 
     public async Task SetShowMetaAsync(int showTmdbId, int? rating, bool like)
@@ -513,7 +545,7 @@ public class SerializdApiClient : ISerializdService
         if (!resp.IsSuccessStatusCode)
         {
             var err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new Exception($"Serializd show-meta ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
+            throw new SerializdRequestException(resp.StatusCode, $"Serializd show-meta ({showTmdbId}) failed ({(int)resp.StatusCode}): {err}");
         }
     }
 
@@ -528,15 +560,32 @@ public class SerializdApiClient : ISerializdService
 
         // Cap concurrency: the gate wraps only the raw send (never a delay or the recursive
         // retry), so a slow endpoint can't hold a slot and the 401/login recursion can't deadlock.
-        HttpResponseMessage response;
+        // A Render cold start surfaces as a refused/reset connection or a timeout rather than
+        // a status code, so those are retried like a transient 5xx (response stays null). The
+        // timeout starts once a slot is free, so waiting behind other requests never eats it.
+        HttpResponseMessage? response = null;
+        var failure = string.Empty;
         await RequestGate.WaitAsync().ConfigureAwait(false);
+        CancellationTokenSource? timeout = null;
         try
         {
-            response = await _http.SendAsync(request).ConfigureAwait(false);
+            timeout = new CancellationTokenSource(RequestTimeout);
+            response = await _http.SendAsync(request, timeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsRetryableSendFailure(method, ex, timeout!) && attempt + 1 < MaxSendAttempts)
+        {
+            failure = ex.GetType().Name;
         }
         finally
         {
+            timeout?.Dispose();
             RequestGate.Release();
+        }
+
+        if (response == null)
+        {
+            await BackoffAsync(path, failure, attempt).ConfigureAwait(false);
+            return await SendAsync(method, path, body, authenticated, isRetry, attempt + 1).ConfigureAwait(false);
         }
 
         if (response.StatusCode == (HttpStatusCode)429 && !isRetry)
@@ -555,10 +604,7 @@ public class SerializdApiClient : ISerializdService
         if ((code == 500 || code == 502 || code == 503 || code == 504) && attempt + 1 < MaxSendAttempts)
         {
             response.Dispose();
-            var delayMs = (int)(Math.Pow(2, attempt) * 500) + Random.Shared.Next(0, 400); // ~0.5s, 1s, 2s (+jitter)
-            _logger.LogWarning("Serializd {Path} returned {Code}; backing off {Ms}ms then retry {Next}/{Max}",
-                path, code, delayMs, attempt + 2, MaxSendAttempts);
-            await Task.Delay(delayMs).ConfigureAwait(false);
+            await BackoffAsync(path, code.ToString(CultureInfo.InvariantCulture), attempt).ConfigureAwait(false);
             return await SendAsync(method, path, body, authenticated, isRetry, attempt + 1).ConfigureAwait(false);
         }
 
@@ -577,9 +623,43 @@ public class SerializdApiClient : ISerializdService
         return response;
     }
 
+    /// <summary>
+    /// Whether a send that got no response may be tried again. A read (GET) may always be: a
+    /// cold start shows up as a refused or reset connection, or our own timeout. A write may only
+    /// be retried when the connection was never made, because after a timeout or a reset the
+    /// server may already have applied it, and a second POST would log the episode twice. Only
+    /// our own timeout counts: a TaskCanceledException from anywhere else is a real cancellation
+    /// and must propagate.
+    /// </summary>
+    internal static bool IsRetryableSendFailure(HttpMethod method, Exception ex, CancellationTokenSource timeout)
+    {
+        if (method == HttpMethod.Get || method == HttpMethod.Head)
+            return ex is HttpRequestException
+                || (ex is TaskCanceledException && (timeout.IsCancellationRequested || ex.InnerException is TimeoutException));
+
+        return IsConnectFailure(ex);
+    }
+
+    // The request never left this machine: no name, no connection, or no TLS session.
+    private static bool IsConnectFailure(Exception ex)
+        => ex is HttpRequestException
+        {
+            HttpRequestError: HttpRequestError.NameResolutionError
+            or HttpRequestError.ConnectionError or HttpRequestError.SecureConnectionError
+        };
+
+    private async Task BackoffAsync(string path, string reason, int attempt)
+    {
+        var delayMs = (int)(Math.Pow(2, attempt) * 500) + Random.Shared.Next(0, 400); // ~0.5s, 1s, 2s (+jitter)
+        _logger.LogWarning("Serializd {Path} failed ({Reason}); backing off {Ms}ms then retry {Next}/{Max}",
+            path, reason, delayMs, attempt + 2, MaxSendAttempts);
+        await Task.Delay(delayMs).ConfigureAwait(false);
+    }
+
     public void Dispose()
     {
-        _http.Dispose();
+        if (_ownsHttp)
+            _http.Dispose();
         GC.SuppressFinalize(this);
     }
 

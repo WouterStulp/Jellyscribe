@@ -96,7 +96,17 @@ public static class SyncHistory
 {
     private static readonly object _lock = new();
     private static List<SyncEvent>? _events;
+    private static Dictionary<int, List<SyncEvent>>? _byTmdbId;
+    private static List<string>? _unreadableLines;
+    private static bool _readFailed;
     private static ILogger? _logger;
+
+    /// <summary>
+    /// Prunable Skipped/Failed events kept per (user, account, film) when the file is compacted on
+    /// load, on top of the rows <see cref="Compact"/> always keeps. Every run appends another one,
+    /// so without a cap the history grows forever.
+    /// </summary>
+    internal const int MaxPrunableEventsPerFilm = 5;
 
     /// <summary>
     /// Test-only hook for the JSONL file location, plus a way to clear the in-memory
@@ -108,7 +118,7 @@ public static class SyncHistory
     /// <summary>Test hook: drop the in-memory cache so the next access re-reads from disk.</summary>
     internal static void ResetForTesting()
     {
-        lock (_lock) { _events = null; }
+        lock (_lock) { _events = null; _byTmdbId = null; _unreadableLines = null; _readFailed = false; }
     }
 
     public static void SetLogger(ILogger logger) => _logger = logger;
@@ -129,6 +139,26 @@ public static class SyncHistory
     /// so the next run does not ask Letterboxd again.
     /// </summary>
     public const string AlreadyOnDiaryError = "Already on Letterboxd diary for this date";
+
+    /// <summary>Error text of the Skipped event recorded once for a played film with no TMDb id.</summary>
+    public const string NoTmdbIdError = "No TMDb ID";
+
+    /// <summary>
+    /// True if a "no TMDb id" skip is already recorded for this film title, user and account, so
+    /// the sync records it once instead of on every run.
+    /// </summary>
+    public static bool HasNoTmdbIdSkip(string username, string filmTitle, string? account)
+    {
+        lock (_lock)
+        {
+            var userId = ResolveUserId(username);
+            return EventsForFilm(0).Any(e => e.Status == SyncStatus.Skipped
+                && string.Equals(e.Error, NoTmdbIdError, StringComparison.Ordinal)
+                && string.Equals(e.FilmTitle, filmTitle, StringComparison.Ordinal)
+                && BelongsTo(e, username, userId)
+                && MatchesAccount(e, account));
+        }
+    }
 
     /// <summary>Start of the Error text of a Skipped event the local duplicate backstop recorded.
     /// Settled the same way as <see cref="AlreadyOnDiaryError"/>.</summary>
@@ -224,7 +254,107 @@ public static class SyncHistory
         if (_events != null) return _events;
 
         _events = new List<SyncEvent>();
+        _unreadableLines = new List<string>();
+        _readFailed = false;
+        // Compaction rewrites the whole file, so it only runs after a read that understood every
+        // line. A read that failed partway, or a line this version cannot parse, leaves the file
+        // exactly as it is.
+        if (ReadEventsFromDisk())
+        {
+            var dropped = Compact(_events);
+            if (dropped > 0)
+            {
+                SaveAllEvents();
+                _logger?.LogInformation("Compacted sync history: dropped {Count} old skipped/failed events", dropped);
+            }
+        }
 
+        _byTmdbId = new Dictionary<int, List<SyncEvent>>();
+        foreach (var evt in _events)
+            IndexEvent(evt);
+
+        return _events;
+    }
+
+    private static void IndexEvent(SyncEvent evt)
+    {
+        if (!_byTmdbId!.TryGetValue(evt.TmdbId, out var list))
+        {
+            list = new List<SyncEvent>();
+            _byTmdbId[evt.TmdbId] = list;
+        }
+
+        list.Add(evt);
+    }
+
+    // Keyed by film only: BelongsTo matches on UserId or Username depending on what each event
+    // carries, so the per-user filter stays in the query over this (small) per-film list.
+    private static List<SyncEvent> EventsForFilm(int tmdbId)
+    {
+        LoadEvents();
+        return _byTmdbId!.TryGetValue(tmdbId, out var list) ? list : new List<SyncEvent>();
+    }
+
+    /// <summary>
+    /// Drops old Skipped/Failed rows, in place, returning how many were dropped. Every run appends
+    /// another such row for a film it cannot sync, so without a cap the file grows forever.
+    /// Rows are grouped by (user, Letterboxd account, film). Within a group it keeps:
+    /// <list type="bullet">
+    /// <item>every row that is not Skipped or Failed (Success, Rewatch, Rated, Requested);</item>
+    /// <item>diary-import markers, which the import-then-export loop guard reads;</item>
+    /// <item>settled skips ("already on the diary", the local backstop), which
+    /// <see cref="WasSuccessfullySynced(string, int, DateTime, string?)"/> reads per viewing date;</item>
+    /// <item>every non-outage Failed row in the trailing failure streak, which
+    /// <see cref="GetFailureStreak(string, int, string?)"/> counts toward abandoning a film;</item>
+    /// <item>the newest <see cref="MaxPrunableEventsPerFilm"/> of the rest.</item>
+    /// </list>
+    /// What it drops is either older than the group's newest non-Failed row (so outside any
+    /// streak) or an outage row, which counts toward nothing and does not break a streak.
+    /// Grouping by account is never coarser than a lookup: a lookup for one account also sees the
+    /// legacy rows without one, so its streak can only end later than the group's, never earlier.
+    /// </summary>
+    internal static int Compact(List<SyncEvent> events)
+    {
+        var drop = new HashSet<SyncEvent>();
+        foreach (var group in events.GroupBy(e => (
+                     User: string.IsNullOrEmpty(e.UserId) ? "name:" + e.Username : "id:" + e.UserId.ToLowerInvariant(),
+                     Account: (e.Account ?? string.Empty).ToLowerInvariant(),
+                     e.TmdbId,
+                     e.FilmTitle)))
+        {
+            DateTime? streakEnd = null;
+            foreach (var e in group)
+            {
+                if (e.Status == SyncStatus.Failed || e.Status == SyncStatus.Rated) continue;
+                if (streakEnd == null || e.Timestamp > streakEnd) streakEnd = e.Timestamp;
+            }
+
+            var surplus = group.Where(IsPrunable)
+                .OrderByDescending(e => e.Timestamp)
+                .Skip(MaxPrunableEventsPerFilm);
+            foreach (var e in surplus)
+            {
+                var inStreak = e.Status == SyncStatus.Failed && (streakEnd == null || e.Timestamp >= streakEnd);
+                if (inStreak && !e.Outage) continue;
+                drop.Add(e);
+            }
+        }
+
+        return drop.Count == 0 ? 0 : events.RemoveAll(drop.Contains);
+    }
+
+    private static bool IsPrunable(SyncEvent e)
+        => (e.Status == SyncStatus.Skipped || e.Status == SyncStatus.Failed)
+            && !string.Equals(e.Source, SyncEventSources.DiaryImport, StringComparison.Ordinal)
+            && !IsSettledSkip(e);
+
+    /// <summary>
+    /// Reads the JSONL (or migrates the legacy JSON) into <see cref="_events"/>. Returns true only
+    /// when every line was read and understood. Lines that do not parse are kept verbatim and
+    /// written back by any later rewrite; a read that fails partway blocks rewrites altogether.
+    /// </summary>
+    private static bool ReadEventsFromDisk()
+    {
         try
         {
             var jsonlPath = DataPath;
@@ -233,14 +363,27 @@ public static class SyncHistory
                 foreach (var line in File.ReadLines(jsonlPath))
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
+                    SyncEvent? evt = null;
                     try
                     {
-                        var evt = JsonSerializer.Deserialize<SyncEvent>(line);
-                        if (evt != null) _events.Add(evt);
+                        evt = JsonSerializer.Deserialize<SyncEvent>(line);
                     }
-                    catch { }
+                    catch (Exception)
+                    {
+                        // Kept verbatim below rather than lost.
+                    }
+
+                    if (evt != null) _events!.Add(evt);
+                    else _unreadableLines!.Add(line);
                 }
-                return _events;
+
+                if (_unreadableLines!.Count > 0)
+                {
+                    _logger?.LogWarning("Skipped {Count} unreadable lines in sync history {Path}; they are kept in the file", _unreadableLines.Count, jsonlPath);
+                    return false;
+                }
+
+                return true;
             }
 
             // Migrate from old JSON format if it exists
@@ -253,29 +396,30 @@ public static class SyncHistory
                 SaveAllEvents();
                 _logger?.LogInformation("Migrated {Count} sync history events from JSON to JSONL", _events.Count);
             }
+
+            return true;
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to load sync history from {Path}", DataPath);
+            _readFailed = true;
+            _logger?.LogError(ex, "Failed to load sync history from {Path}; it will not be rewritten until it loads cleanly", DataPath);
+            return false;
         }
-
-        return _events;
     }
 
     private static void SaveAllEvents()
     {
+        // Rewriting from a partial read would delete every row that was not read.
+        if (_readFailed)
+        {
+            _logger?.LogWarning("Not rewriting sync history {Path}: it did not load cleanly", DataPath);
+            return;
+        }
+
         try
         {
-            var path = DataPath;
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
-            using var writer = new StreamWriter(path, append: false);
-            foreach (var evt in _events!)
-            {
-                writer.WriteLine(JsonSerializer.Serialize(evt));
-            }
+            JsonlFile.WriteAllLinesAtomic(DataPath,
+                _events!.Select(e => JsonSerializer.Serialize(e)).Concat(_unreadableLines ?? new List<string>()));
         }
         catch (Exception ex)
         {
@@ -292,15 +436,11 @@ public static class SyncHistory
         {
             var events = LoadEvents();
             events.Add(evt);
+            IndexEvent(evt);
 
             try
             {
-                var path = DataPath;
-                var dir = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
-
-                File.AppendAllText(path, JsonSerializer.Serialize(evt) + Environment.NewLine);
+                JsonlFile.AppendLine(DataPath, JsonSerializer.Serialize(evt));
             }
             catch (Exception ex)
             {
@@ -368,7 +508,7 @@ public static class SyncHistory
     {
         lock (_lock)
         {
-            return GetLastStatusForFilm(LoadEvents(), username, tmdbId, account);
+            return GetLastStatusForFilm(EventsForFilm(tmdbId), username, tmdbId, account);
         }
     }
 
@@ -382,7 +522,7 @@ public static class SyncHistory
     {
         lock (_lock)
         {
-            return WasSuccessfullySynced(LoadEvents(), username, tmdbId, viewingDate, account);
+            return WasSuccessfullySynced(EventsForFilm(tmdbId), username, tmdbId, viewingDate, account);
         }
     }
 
@@ -427,7 +567,7 @@ public static class SyncHistory
     {
         lock (_lock)
         {
-            return GetFailureStreak(LoadEvents(), username, tmdbId, account);
+            return GetFailureStreak(EventsForFilm(tmdbId), username, tmdbId, account);
         }
     }
 
@@ -484,7 +624,7 @@ public static class SyncHistory
     {
         lock (_lock)
         {
-            return GetLastSuccessfulSyncDate(LoadEvents(), username, tmdbId, account);
+            return GetLastSuccessfulSyncDate(EventsForFilm(tmdbId), username, tmdbId, account);
         }
     }
 
@@ -513,7 +653,7 @@ public static class SyncHistory
     {
         lock (_lock)
         {
-            return WasImportedFromDiary(LoadEvents(), username, tmdbId);
+            return WasImportedFromDiary(EventsForFilm(tmdbId), username, tmdbId);
         }
     }
 

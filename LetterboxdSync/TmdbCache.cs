@@ -81,13 +81,10 @@ public static class TmdbCache
     {
         try
         {
-            var path = CachePath;
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
             var json = JsonSerializer.Serialize(_cache, new JsonSerializerOptions { WriteIndented = false });
-            File.WriteAllText(path, json);
+            // Written beside the file and swapped in, so a crash mid-write can't leave invalid
+            // JSON (which Load would treat as an empty cache).
+            JsonlFile.WriteAllTextAtomic(CachePath, json);
         }
         catch (Exception ex)
         {
